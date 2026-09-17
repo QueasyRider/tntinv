@@ -308,6 +308,11 @@ export async function markExported(id: string, squareItemId: string, squareVersi
   await getSql()`UPDATE products SET working_json = ${JSON.stringify(working)}, status = 'exported', square_item_id = ${squareItemId}, square_version = ${squareVersion}, last_error = NULL, exported_at = ${now}, updated_at = ${now} WHERE id = ${id}`;
 }
 
+export async function saveSquareCatalogMapping(id: string, squareItemId: string, squareVersion: number | null, working: ProductCopy): Promise<void> {
+  await ensureDatabase();
+  await getSql()`UPDATE products SET working_json = ${JSON.stringify(working)}, square_item_id = ${squareItemId}, square_version = ${squareVersion}, last_error = NULL, updated_at = ${new Date().toISOString()} WHERE id = ${id}`;
+}
+
 export async function markExportError(id: string, error: string): Promise<void> {
   await ensureDatabase();
   await getSql()`UPDATE products SET status = 'error', last_error = ${error}, updated_at = ${new Date().toISOString()} WHERE id = ${id}`;

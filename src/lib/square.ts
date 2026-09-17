@@ -1,13 +1,50 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
-import { deleteOauthState, getConnection, getOauthState, getSettings, markExported, saveConnectionToken, saveOauthState, updateConnectionTest, validateProduct } from "./repository";
+import { deleteOauthState, getConnection, getOauthState, getSettings, markExported, saveConnectionToken, saveOauthState, saveSquareCatalogMapping, updateConnectionTest, validateProduct } from "./repository";
 import type { ProviderToken, SquareConfig } from "./repository";
 import { resolveExistingSquareCategory } from "./square-categories";
 import type { SquareCategorySummary } from "./square-categories";
 import { normalizeProductText, plainTextToSquareHtml } from "./text-format";
-import type { Product, ProductCopy } from "./types";
+import type { Product, ProductCopy, Variant } from "./types";
 
 const SQUARE_VERSION = "2026-09-16";
+
+interface SquareErrorDetail {
+  code?: string;
+  detail?: string;
+}
+
+interface SquareCatalogVariation {
+  type: string;
+  id: string;
+  version?: number;
+  is_deleted?: boolean;
+  item_variation_data?: {
+    item_id?: string;
+    name?: string;
+    sku?: string;
+    [key: string]: unknown;
+  };
+}
+
+interface SquareCatalogItem {
+  type: string;
+  id: string;
+  version?: number;
+  is_deleted?: boolean;
+  custom_attribute_values?: Record<string, unknown>;
+  item_data?: {
+    variations?: SquareCatalogVariation[];
+    [key: string]: unknown;
+  };
+}
+
+class SquareRequestError extends Error {
+  constructor(message: string, readonly status: number, readonly errors: SquareErrorDetail[]) {
+    super(message);
+    this.name = "SquareRequestError";
+  }
+}
 
 function origins(environment: SquareConfig["environment"]) {
   return environment === "production"
@@ -57,8 +94,8 @@ async function squareFetch<T>(path: string, init: RequestInit = {}, retry = true
     const refreshed = await squareAccess(true);
     return squareFetchWithAccess<T>(path, init, refreshed);
   }
-  const body = await response.json().catch(() => ({})) as { errors?: Array<{ detail?: string; code?: string }> } & T;
-  if (!response.ok || body.errors?.length) throw new Error(body.errors?.map((item) => item.detail || item.code).join(" ") || `Square request failed (${response.status}).`);
+  const body = await response.json().catch(() => ({})) as { errors?: SquareErrorDetail[] } & T;
+  if (!response.ok || body.errors?.length) throw new SquareRequestError(body.errors?.map((item) => item.detail || item.code).join(" ") || `Square request failed (${response.status}).`, response.status, body.errors || []);
   return body;
 }
 
@@ -68,39 +105,83 @@ async function squareFetchWithAccess<T>(path: string, init: RequestInit, access:
     cache: "no-store",
     headers: { Authorization: `Bearer ${access.token.accessToken}`, "Square-Version": SQUARE_VERSION, ...(init.body instanceof FormData ? {} : { "Content-Type": "application/json" }), ...init.headers },
   });
-  const body = await response.json().catch(() => ({})) as { errors?: Array<{ detail?: string; code?: string }> } & T;
-  if (!response.ok || body.errors?.length) throw new Error(body.errors?.map((item) => item.detail || item.code).join(" ") || `Square request failed (${response.status}).`);
+  const body = await response.json().catch(() => ({})) as { errors?: SquareErrorDetail[] } & T;
+  if (!response.ok || body.errors?.length) throw new SquareRequestError(body.errors?.map((item) => item.detail || item.code).join(" ") || `Square request failed (${response.status}).`, response.status, body.errors || []);
   return body;
 }
 
-function squareObject(product: Product, copy: ProductCopy) {
-  const sourceVariants = copy.variants.length ? copy.variants : [{ id: "regular", name: "Regular", optionName: "Option", optionValue: "Regular", sku: copy.sku, priceCents: copy.priceCents, quantity: copy.quantity, squareVariationId: null }];
-  const itemId = product.squareItemId || `#item-${product.id}`;
-  return {
+const normalizeSku = (sku: string | undefined): string => sku?.trim().toUpperCase() || "";
+
+function isMissingCatalogObject(error: unknown): boolean {
+  return error instanceof SquareRequestError
+    && (error.status === 404 || error.errors.some((item) => item.code === "NOT_FOUND" || item.detail?.toLowerCase().includes("nonexistent object")));
+}
+
+async function retrieveActiveSquareItem(itemId: string): Promise<SquareCatalogItem | null> {
+  try {
+    const result = await squareFetch<{ object?: SquareCatalogItem }>(`/v2/catalog/object/${encodeURIComponent(itemId)}`);
+    return result.object?.type === "ITEM" && !result.object.is_deleted ? result.object : null;
+  } catch (error) {
+    if (isMissingCatalogObject(error)) return null;
+    throw error;
+  }
+}
+
+function sourceVariants(copy: ProductCopy): Variant[] {
+  return copy.variants.length ? copy.variants : [{ id: "regular", name: "Regular", optionName: "Option", optionValue: "Regular", sku: copy.sku, priceCents: copy.priceCents, quantity: copy.quantity, squareVariationId: null }];
+}
+
+function squareObject(product: Product, copy: ProductCopy, variants: Variant[], existingItem: SquareCatalogItem | null) {
+  const itemId = existingItem?.id || `#item-${product.id}`;
+  const availableVariations = (existingItem?.item_data?.variations || []).filter((variation) => !variation.is_deleted);
+  const usedVariationIds = new Set<string>();
+  const variationObjects = variants.map((variant, index) => {
+    const storedMatch = variant.squareVariationId
+      ? availableVariations.find((candidate) => candidate.id === variant.squareVariationId && !usedVariationIds.has(candidate.id))
+      : undefined;
+    const skuMatches = availableVariations.filter((candidate) => normalizeSku(candidate.item_variation_data?.sku) === normalizeSku(variant.sku) && !usedVariationIds.has(candidate.id));
+    const existingVariation = storedMatch || (skuMatches.length === 1 ? skuMatches[0] : undefined);
+    if (existingVariation) usedVariationIds.add(existingVariation.id);
+    const variationId = existingVariation?.id || `#variation-${product.id}-${index}`;
+    return {
+      type: "ITEM_VARIATION",
+      id: variationId,
+      ...(existingVariation?.version ? { version: existingVariation.version } : {}),
+      present_at_all_locations: true,
+      item_variation_data: {
+        ...(existingVariation?.item_variation_data || {}),
+        item_id: itemId,
+        name: variant.name || variant.optionValue || "Regular",
+        sku: variant.sku || copy.sku,
+        pricing_type: "FIXED_PRICING",
+        price_money: { amount: variant.priceCents, currency: "USD" },
+        track_inventory: true,
+      },
+    };
+  });
+  const object = {
     type: "ITEM",
     id: itemId,
-    ...(product.squareVersion ? { version: product.squareVersion } : {}),
+    ...(existingItem?.version ? { version: existingItem.version } : {}),
+    ...(existingItem?.custom_attribute_values ? { custom_attribute_values: existingItem.custom_attribute_values } : {}),
     present_at_all_locations: true,
     item_data: {
+      ...(existingItem?.item_data || {}),
       name: copy.title,
       description_html: plainTextToSquareHtml(copy.description),
       product_type: "REGULAR",
       ...(copy.squareCategoryId ? { categories: [{ id: copy.squareCategoryId }] } : {}),
-      variations: sourceVariants.map((variant, index) => ({
-        type: "ITEM_VARIATION",
-        id: variant.squareVariationId || `#variation-${product.id}-${index}`,
-        present_at_all_locations: true,
-        item_variation_data: {
-          item_id: itemId,
-          name: variant.name || variant.optionValue || "Regular",
-          sku: variant.sku || copy.sku,
-          pricing_type: "FIXED_PRICING",
-          price_money: { amount: variant.priceCents, currency: "USD" },
-          track_inventory: true,
-        },
-      })),
+      variations: variationObjects,
     },
   };
+  return { object, variationObjectIds: variationObjects.map((variation) => variation.id) };
+}
+
+async function upsertSquareItem(object: ReturnType<typeof squareObject>["object"], idempotencyKey: string) {
+  return squareFetch<{ objects?: SquareCatalogItem[]; id_mappings?: Array<{ client_object_id: string; object_id: string }> }>("/v2/catalog/batch-upsert", {
+    method: "POST",
+    body: JSON.stringify({ idempotency_key: idempotencyKey, batches: [{ objects: [object] }] }),
+  });
 }
 
 export async function listSquareCategories(): Promise<SquareCategorySummary[]> {
@@ -127,22 +208,41 @@ export async function exportProductToSquare(product: Product, idempotencyKey: st
   const errors = validateProduct(working).filter((issue) => issue.severity === "error");
   if (errors.length) throw new Error(errors.map((issue) => issue.message).join(" "));
   working.squareCategoryId = resolveExistingSquareCategory(working.category, working.squareCategoryId, categories);
-  const object = squareObject(product, working);
-  const result = await squareFetch<{ objects?: Array<{ id: string; version?: number; item_data?: { variations?: Array<{ id: string }> } }>; id_mappings?: Array<{ client_object_id: string; object_id: string }> }>("/v2/catalog/batch-upsert", {
-    method: "POST",
-    body: JSON.stringify({ idempotency_key: idempotencyKey, batches: [{ objects: [object] }] }),
-  });
+  const variants = sourceVariants(working);
+  let existingItem = product.squareItemId ? await retrieveActiveSquareItem(product.squareItemId) : null;
+  if (product.squareItemId && !existingItem) {
+    console.warn(JSON.stringify({ level: "warning", message: "Stale Square item mapping detected; creating a new catalog item", productId: product.id, etsyListingId: product.etsyListingId, squareItemId: product.squareItemId }));
+  }
+  let prepared = squareObject(product, working, variants, existingItem);
+  let result: Awaited<ReturnType<typeof upsertSquareItem>>;
+  try {
+    result = await upsertSquareItem(prepared.object, idempotencyKey);
+  } catch (error) {
+    if (!existingItem || !isMissingCatalogObject(error)) throw error;
+    console.warn(JSON.stringify({ level: "warning", message: "Square catalog object disappeared during export; retrying as a new item", productId: product.id, etsyListingId: product.etsyListingId, squareItemId: existingItem.id }));
+    existingItem = null;
+    prepared = squareObject(product, working, variants, null);
+    result = await upsertSquareItem(prepared.object, `${idempotencyKey}-recreate`);
+  }
+  const { object, variationObjectIds } = prepared;
   const itemMapping = result.id_mappings?.find((mapping) => mapping.client_object_id === object.id);
-  const item = result.objects?.find((candidate) => candidate.id === (itemMapping?.object_id || product.squareItemId)) || result.objects?.[0];
+  const expectedItemId = itemMapping?.object_id || (object.id.startsWith("#") ? undefined : object.id);
+  const item = result.objects?.find((candidate) => candidate.id === expectedItemId) || result.objects?.find((candidate) => candidate.type === "ITEM") || result.objects?.[0];
   const squareItemId = itemMapping?.object_id || item?.id;
   if (!squareItemId) throw new Error("Square did not return an item mapping.");
-  const source = working.variants.length ? working.variants : [{ id: "regular", name: "Regular", optionName: "Option", optionValue: "Regular", sku: working.sku, priceCents: working.priceCents, quantity: working.quantity }];
-  source.forEach((variant, index) => {
-    const clientId = `#variation-${product.id}-${index}`;
-    const mapping = result.id_mappings?.find((candidate) => candidate.client_object_id === clientId);
-    variant.squareVariationId = mapping?.object_id || item?.item_data?.variations?.[index]?.id || variant.squareVariationId;
+  variants.forEach((variant, index) => {
+    const sentId = variationObjectIds[index];
+    const mapping = result.id_mappings?.find((candidate) => candidate.client_object_id === sentId);
+    const responseVariation = item?.item_data?.variations?.find((candidate) => candidate.id === sentId)
+      || item?.item_data?.variations?.find((candidate) => normalizeSku(candidate.item_variation_data?.sku) === normalizeSku(variant.sku));
+    variant.squareVariationId = mapping?.object_id || responseVariation?.id || (sentId.startsWith("#") ? null : sentId);
   });
-  if (!working.variants.length) working.variants = source;
+  const unmappedVariant = variants.find((variant) => !variant.squareVariationId);
+  if (unmappedVariant) throw new Error(`Square did not return a catalog ID for variation ${unmappedVariant.name}.`);
+  if (!working.variants.length) working.variants = variants;
+
+  await saveSquareCatalogMapping(product.id, squareItemId, item?.version ?? null, working);
+  console.log(JSON.stringify({ level: "info", message: "Square catalog mapping saved", productId: product.id, etsyListingId: product.etsyListingId, squareItemId }));
 
   if (working.images[0]) {
     const imageResponse = await fetch(working.images[0]);
@@ -158,7 +258,7 @@ export async function exportProductToSquare(product: Product, idempotencyKey: st
   const connection = await getConnection("square");
   const locationId = settings.squareLocationId || connection.config?.locationId;
   if (!locationId) throw new Error("Choose a Square location before setting inventory.");
-  const changes = source.filter((variant) => variant.squareVariationId).map((variant) => ({
+  const changes = variants.filter((variant) => variant.squareVariationId).map((variant) => ({
     type: "PHYSICAL_COUNT",
     physical_count: { catalog_object_id: variant.squareVariationId, state: "IN_STOCK", location_id: locationId, quantity: String(variant.quantity), occurred_at: new Date().toISOString(), reference_id: `${product.etsyListingId}:${variant.id}` },
   }));
