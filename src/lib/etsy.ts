@@ -215,11 +215,18 @@ export async function importFromEtsy(): Promise<EtsyImportResult> {
 
   const inventories = await getListingInventories(listings);
   let missingImageCount = 0;
+  let variationListingCount = 0;
+  let variantCount = 0;
   for (const listing of listings) {
     const product = await listingToProduct(listing, taxonomy, inventories.get(listing.listing_id) || null);
     if (!product.images.length) missingImageCount++;
+    if (product.variants.length) {
+      variationListingCount++;
+      variantCount += product.variants.length;
+    }
     await upsertImportedProduct(String(listing.listing_id), product);
   }
+  console.log(JSON.stringify({ level: "info", message: "Etsy variations mapped", variationListingCount, variantCount }));
   return { count: listings.length, missingImageCount };
 }
 

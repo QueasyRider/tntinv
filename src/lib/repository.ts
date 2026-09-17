@@ -177,14 +177,16 @@ function refreshedSku(existingSku: string, importedSku: string, etsyListingId: s
 }
 
 function refreshGeneratedImportValues(etsyListingId: string, imported: ProductCopy, existing: ProductCopy): ProductCopy {
-  const variants = existing.variants.map((variant, index) => {
-    const importedVariant = imported.variants.find((candidate) =>
-      (variant.etsyProductId && candidate.etsyProductId === variant.etsyProductId) || candidate.id === variant.id,
-    ) || imported.variants[index];
-    return importedVariant
-      ? { ...variant, sku: refreshedSku(variant.sku, importedVariant.sku, etsyListingId) }
-      : variant;
-  });
+  const variants = existing.variants.length
+    ? existing.variants.map((variant, index) => {
+        const importedVariant = imported.variants.find((candidate) =>
+          (variant.etsyProductId && candidate.etsyProductId === variant.etsyProductId) || candidate.id === variant.id,
+        ) || imported.variants[index];
+        return importedVariant
+          ? { ...variant, sku: refreshedSku(variant.sku, importedVariant.sku, etsyListingId) }
+          : variant;
+      })
+    : imported.variants;
   return {
     ...existing,
     sku: refreshedSku(existing.sku, imported.sku, etsyListingId),
