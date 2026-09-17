@@ -20,9 +20,13 @@ export function ProductEditor({ product, activities, onBack, onSave, onExport, b
   product: Product; activities: Activity[]; onBack: () => void; onSave: (working: ProductCopy, ready: boolean) => Promise<void>;
   onExport: () => void; busy: string | null;
 }) {
-  const [draft, setDraft] = useState<ProductCopy>(structuredClone(product.working));
+  const workingCopy = useMemo<ProductCopy>(() => ({
+    ...product.working,
+    images: product.working.images.length ? product.working.images : product.original.images,
+  }), [product.original.images, product.working]);
+  const [draft, setDraft] = useState<ProductCopy>(() => structuredClone(workingCopy));
   const [tab, setTab] = useState<Tab>("edit");
-  const dirty = useMemo(() => changed(product.working, draft), [product.working, draft]);
+  const dirty = useMemo(() => changed(workingCopy, draft), [workingCopy, draft]);
   const differences = useMemo(() => (["title", "description", "priceCents", "sku", "category", "tags", "quantity"] as const).filter((key) => changed(product.original[key], draft[key])), [product.original, draft]);
   const set = <K extends keyof ProductCopy>(key: K, value: ProductCopy[K]) => setDraft((current) => ({ ...current, [key]: value }));
   const updateVariant = (id: string, key: keyof Variant, value: string | number) => setDraft((current) => ({ ...current, variants: current.variants.map((variant) => variant.id === id ? { ...variant, [key]: value } : variant) }));

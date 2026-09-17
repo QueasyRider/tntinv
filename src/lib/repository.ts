@@ -233,7 +233,13 @@ export async function upsertImportedProduct(etsyListingId: string, original: Pro
     const overwrittenBySku = existing.etsy_listing_id !== etsyListingId;
     const duplicateIds = new Set(skuOwnerIds.filter((ownerId) => ownerId !== existing.id));
     for (const duplicateId of duplicateIds) await sql`DELETE FROM products WHERE id = ${duplicateId}`;
-    const working = overwrittenBySku ? retainSquareMappings(original, JSON.parse(existing.working_json) as ProductCopy) : JSON.parse(existing.working_json) as ProductCopy;
+    const existingWorking = JSON.parse(existing.working_json) as ProductCopy;
+    const working = overwrittenBySku
+      ? retainSquareMappings(original, existingWorking)
+      : {
+          ...existingWorking,
+          images: existingWorking.images.length ? existingWorking.images : original.images,
+        };
     await sql`
       UPDATE products
       SET etsy_listing_id = ${etsyListingId},
