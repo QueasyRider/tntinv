@@ -20,7 +20,13 @@ interface EtsyListing {
   price?: { amount: number; divisor: number };
   taxonomy_id?: number;
   taxonomy_path?: string[];
+  shop_section_id?: number | null;
   images?: EtsyListingImageRef[];
+}
+
+interface EtsyShopSection {
+  shop_section_id: number;
+  title: string;
 }
 
 interface EtsyTaxonomyNode {
@@ -141,6 +147,11 @@ async function getSellerTaxonomy(): Promise<Map<number, string>> {
   return categories;
 }
 
+async function getShopSections(shopId: string): Promise<Map<number, string>> {
+  const response = await etsyFetch<{ results?: EtsyShopSection[] }>(`/shops/${shopId}/sections`);
+  return new Map((response.results || []).map((section) => [section.shop_section_id, section.title.trim()]));
+}
+
 async function getListingInventories(listings: EtsyListing[]): Promise<Map<number, EtsyInventory | null>> {
   const inventories = new Map<number, EtsyInventory | null>();
   for (let index = 0; index < listings.length; index += 100) {
@@ -187,7 +198,13 @@ async function getVariationImageLookup(shopId: string, listingId: number, listin
   }
 }
 
-async function listingToProduct(listing: EtsyListing, taxonomy: Map<number, string>, inventory: EtsyInventory | null, shopId: string): Promise<ProductCopy> {
+async function listingToProduct(
+  listing: EtsyListing,
+  taxonomy: Map<number, string>,
+  shopSections: Map<number, string>,
+  inventory: EtsyInventory | null,
+  shopId: string,
+): Promise<ProductCopy> {
   const products = inventory?.products || [];
   const listingImages = await getListingImages(listing);
   const hasVariants = products.some((product) => product.property_values?.some((property) => property.values?.length || property.value_ids?.length));
@@ -214,12 +231,18 @@ async function listingToProduct(listing: EtsyListing, taxonomy: Map<number, stri
   if (!images.length) {
     console.warn(JSON.stringify({ level: "warning", message: "Etsy listing returned no usable images", listingId: listing.listing_id }));
   }
+  const etsyTaxonomy = (listing.taxonomy_id ? taxonomy.get(listing.taxonomy_id) : undefined)
+    || listing.taxonomy_path?.join(" > ")
+    || (listing.taxonomy_id ? `Etsy taxonomy #${listing.taxonomy_id}` : "Other");
+  const shopSection = listing.shop_section_id ? shopSections.get(listing.shop_section_id) : undefined;
   return {
     title: listing.title,
     description: listing.description,
     priceCents: variants[0]?.priceCents ?? cents(listing.price),
     sku: variants[0]?.sku || String(listing.listing_id),
-    category: (listing.taxonomy_id ? taxonomy.get(listing.taxonomy_id) : undefined) || listing.taxonomy_path?.join(" > ") || (listing.taxonomy_id ? `Etsy taxonomy #${listing.taxonomy_id}` : "Other"),
+    category: shopSection || etsyTaxonomy,
+    shopSection,
+    etsyTaxonomy,
     tags: listing.tags || [],
     quantity: variants.length ? variants.reduce((sum, variant) => sum + variant.quantity, 0) : listing.quantity,
     state: listing.state,
@@ -230,7 +253,10 @@ async function listingToProduct(listing: EtsyListing, taxonomy: Map<number, stri
 
 export async function importFromEtsy(): Promise<EtsyImportResult> {
   const { shopId } = await getConnectedShop();
-  const taxonomy = await getSellerTaxonomy().catch(() => new Map<number, string>());
+  const [taxonomy, shopSections] = await Promise.all([
+    getSellerTaxonomy().catch(() => new Map<number, string>()),
+    getShopSections(shopId),
+  ]);
   let offset = 0;
   const listings: EtsyListing[] = [];
   do {
@@ -249,7 +275,7 @@ export async function importFromEtsy(): Promise<EtsyImportResult> {
     const listingBatch = listings.slice(index, index + 4);
     const products = await Promise.all(listingBatch.map(async (listing) => ({
       listing,
-      product: await listingToProduct(listing, taxonomy, inventories.get(listing.listing_id) || null, shopId),
+      product: await listingToProduct(listing, taxonomy, shopSections, inventories.get(listing.listing_id) || null, shopId),
     })));
     for (const { listing, product } of products) {
       if (!product.images.length) missingImageCount++;

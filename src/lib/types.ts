@@ -20,6 +20,8 @@ export interface ProductCopy {
   priceCents: number;
   sku: string;
   category: string;
+  shopSection?: string;
+  etsyTaxonomy?: string;
   squareCategoryId?: string;
   tags: string[];
   quantity: number;

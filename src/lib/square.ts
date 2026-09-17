@@ -1,7 +1,9 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
-import { deleteOauthState, getConnection, getOauthState, getSettings, markExported, markExportError, saveConnectionToken, saveOauthState, updateConnectionTest, validateProduct } from "./repository";
+import { deleteOauthState, getConnection, getOauthState, getSettings, markExported, saveConnectionToken, saveOauthState, updateConnectionTest, validateProduct } from "./repository";
 import type { ProviderToken, SquareConfig } from "./repository";
+import { resolveExistingSquareCategory } from "./square-categories";
+import type { SquareCategorySummary } from "./square-categories";
 import type { Product, ProductCopy } from "./types";
 
 const SQUARE_VERSION = "2026-09-16";
@@ -100,53 +102,67 @@ function squareObject(product: Product, copy: ProductCopy) {
   };
 }
 
-export async function exportProductToSquare(product: Product, idempotencyKey: string): Promise<void> {
-  const errors = validateProduct(product.working).filter((issue) => issue.severity === "error");
-  if (errors.length) throw new Error(errors.map((issue) => issue.message).join(" "));
-  try {
-    const object = squareObject(product, product.working);
-    const result = await squareFetch<{ objects?: Array<{ id: string; version?: number; item_data?: { variations?: Array<{ id: string }> } }>; id_mappings?: Array<{ client_object_id: string; object_id: string }> }>("/v2/catalog/batch-upsert", {
-      method: "POST",
-      body: JSON.stringify({ idempotency_key: idempotencyKey, batches: [{ objects: [object] }] }),
-    });
-    const itemMapping = result.id_mappings?.find((mapping) => mapping.client_object_id === object.id);
-    const item = result.objects?.find((candidate) => candidate.id === (itemMapping?.object_id || product.squareItemId)) || result.objects?.[0];
-    const squareItemId = itemMapping?.object_id || item?.id;
-    if (!squareItemId) throw new Error("Square did not return an item mapping.");
-    const working = structuredClone(product.working);
-    const source = working.variants.length ? working.variants : [{ id: "regular", name: "Regular", optionName: "Option", optionValue: "Regular", sku: working.sku, priceCents: working.priceCents, quantity: working.quantity }];
-    source.forEach((variant, index) => {
-      const clientId = `#variation-${product.id}-${index}`;
-      const mapping = result.id_mappings?.find((candidate) => candidate.client_object_id === clientId);
-      variant.squareVariationId = mapping?.object_id || item?.item_data?.variations?.[index]?.id || variant.squareVariationId;
-    });
-    if (!working.variants.length) working.variants = source;
-
-    if (working.images[0]) {
-      const imageResponse = await fetch(working.images[0]);
-      if (imageResponse.ok) {
-        const form = new FormData();
-        form.set("request", JSON.stringify({ idempotency_key: `${idempotencyKey}-image`, object_id: squareItemId, image: { type: "IMAGE", id: `#image-${product.id}`, image_data: { name: `${working.title} — Etsy import` } } }));
-        form.set("image_file", await imageResponse.blob(), "etsy-product.jpg");
-        await squareFetch("/v2/catalog/images", { method: "POST", body: form });
-      }
+export async function listSquareCategories(): Promise<SquareCategorySummary[]> {
+  const categories: SquareCategorySummary[] = [];
+  let cursor: string | undefined;
+  do {
+    const params = new URLSearchParams({ types: "CATEGORY" });
+    if (cursor) params.set("cursor", cursor);
+    const result = await squareFetch<{
+      objects?: Array<{ id: string; category_data?: { name?: string; category_type?: string } }>;
+      cursor?: string;
+    }>(`/v2/catalog/list?${params.toString()}`);
+    for (const object of result.objects || []) {
+      const name = object.category_data?.name?.trim();
+      if (name) categories.push({ id: object.id, name, categoryType: object.category_data?.category_type });
     }
+    cursor = result.cursor || undefined;
+  } while (cursor);
+  return categories;
+}
 
-    const settings = await getSettings();
-    const connection = await getConnection("square");
-    const locationId = settings.squareLocationId || connection.config?.locationId;
-    if (!locationId) throw new Error("Choose a Square location before setting inventory.");
-    const changes = source.filter((variant) => variant.squareVariationId).map((variant) => ({
-      type: "PHYSICAL_COUNT",
-      physical_count: { catalog_object_id: variant.squareVariationId, state: "IN_STOCK", location_id: locationId, quantity: String(variant.quantity), occurred_at: new Date().toISOString(), reference_id: `${product.etsyListingId}:${variant.id}` },
-    }));
-    if (changes.length) await squareFetch("/v2/inventory/changes/batch-create", { method: "POST", body: JSON.stringify({ idempotency_key: `${idempotencyKey}-inventory`, changes, ignore_unchanged_counts: true }) });
-    await markExported(product.id, squareItemId, item?.version ?? null, working);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Square export failed.";
-    await markExportError(product.id, message);
-    throw error;
+export async function exportProductToSquare(product: Product, idempotencyKey: string, categories: SquareCategorySummary[]): Promise<void> {
+  const working = structuredClone(product.working);
+  const errors = validateProduct(working).filter((issue) => issue.severity === "error");
+  if (errors.length) throw new Error(errors.map((issue) => issue.message).join(" "));
+  working.squareCategoryId = resolveExistingSquareCategory(working.category, working.squareCategoryId, categories);
+  const object = squareObject(product, working);
+  const result = await squareFetch<{ objects?: Array<{ id: string; version?: number; item_data?: { variations?: Array<{ id: string }> } }>; id_mappings?: Array<{ client_object_id: string; object_id: string }> }>("/v2/catalog/batch-upsert", {
+    method: "POST",
+    body: JSON.stringify({ idempotency_key: idempotencyKey, batches: [{ objects: [object] }] }),
+  });
+  const itemMapping = result.id_mappings?.find((mapping) => mapping.client_object_id === object.id);
+  const item = result.objects?.find((candidate) => candidate.id === (itemMapping?.object_id || product.squareItemId)) || result.objects?.[0];
+  const squareItemId = itemMapping?.object_id || item?.id;
+  if (!squareItemId) throw new Error("Square did not return an item mapping.");
+  const source = working.variants.length ? working.variants : [{ id: "regular", name: "Regular", optionName: "Option", optionValue: "Regular", sku: working.sku, priceCents: working.priceCents, quantity: working.quantity }];
+  source.forEach((variant, index) => {
+    const clientId = `#variation-${product.id}-${index}`;
+    const mapping = result.id_mappings?.find((candidate) => candidate.client_object_id === clientId);
+    variant.squareVariationId = mapping?.object_id || item?.item_data?.variations?.[index]?.id || variant.squareVariationId;
+  });
+  if (!working.variants.length) working.variants = source;
+
+  if (working.images[0]) {
+    const imageResponse = await fetch(working.images[0]);
+    if (imageResponse.ok) {
+      const form = new FormData();
+      form.set("request", JSON.stringify({ idempotency_key: `${idempotencyKey}-image`, object_id: squareItemId, image: { type: "IMAGE", id: `#image-${product.id}`, image_data: { name: `${working.title} — Etsy import` } } }));
+      form.set("image_file", await imageResponse.blob(), "etsy-product.jpg");
+      await squareFetch("/v2/catalog/images", { method: "POST", body: form });
+    }
   }
+
+  const settings = await getSettings();
+  const connection = await getConnection("square");
+  const locationId = settings.squareLocationId || connection.config?.locationId;
+  if (!locationId) throw new Error("Choose a Square location before setting inventory.");
+  const changes = source.filter((variant) => variant.squareVariationId).map((variant) => ({
+    type: "PHYSICAL_COUNT",
+    physical_count: { catalog_object_id: variant.squareVariationId, state: "IN_STOCK", location_id: locationId, quantity: String(variant.quantity), occurred_at: new Date().toISOString(), reference_id: `${product.etsyListingId}:${variant.id}` },
+  }));
+  if (changes.length) await squareFetch("/v2/inventory/changes/batch-create", { method: "POST", body: JSON.stringify({ idempotency_key: `${idempotencyKey}-inventory`, changes, ignore_unchanged_counts: true }) });
+  await markExported(product.id, squareItemId, item?.version ?? null, working);
 }
 
 export async function createSquareAuthorizeUrl(): Promise<string> {

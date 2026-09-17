@@ -91,7 +91,7 @@ function mergeVariants(etsyListingId: string, previousOriginal: Variant[], worki
 export function rebaseImportedProductCopy(imported: ProductCopy, working: ProductCopy): ProductCopy {
   return {
     ...imported,
-    squareCategoryId: working.squareCategoryId,
+    squareCategoryId: sameValue(imported.category, working.category) ? working.squareCategoryId : undefined,
     variants: imported.variants.map((variant) => retainSquareVariationMapping(variant, working.variants)),
   };
 }
@@ -102,13 +102,17 @@ export function mergeImportedProductCopy(
   working: ProductCopy,
   imported: ProductCopy,
 ): ProductCopy {
+  const category = mergeValue(previousOriginal.category, working.category, imported.category);
+  const importedCategoryChanged = !sameValue(imported.category, previousOriginal.category);
   return {
     title: mergeValue(previousOriginal.title, working.title, imported.title),
     description: mergeValue(previousOriginal.description, working.description, imported.description),
     priceCents: mergeValue(previousOriginal.priceCents, working.priceCents, imported.priceCents),
     sku: mergeSku(etsyListingId, previousOriginal.sku, working.sku, imported.sku),
-    category: mergeValue(previousOriginal.category, working.category, imported.category),
-    squareCategoryId: working.squareCategoryId,
+    category,
+    shopSection: imported.shopSection,
+    etsyTaxonomy: imported.etsyTaxonomy,
+    squareCategoryId: importedCategoryChanged ? undefined : working.squareCategoryId,
     tags: mergeValue(previousOriginal.tags, working.tags, imported.tags),
     quantity: mergeValue(previousOriginal.quantity, working.quantity, imported.quantity),
     state: mergeValue(previousOriginal.state, working.state, imported.state),

@@ -1,6 +1,6 @@
 import { apiError } from "@/lib/http";
-import { exportProductToSquare } from "@/lib/square";
-import { addActivity, finishSyncRun, getAppState, getProduct, getSettings, markExported, startSyncRun } from "@/lib/repository";
+import { exportProductToSquare, listSquareCategories } from "@/lib/square";
+import { addActivity, finishSyncRun, getAppState, getProduct, getSettings, markExported, markExportError, startSyncRun } from "@/lib/repository";
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({})) as { ids?: string[] };
@@ -9,6 +9,7 @@ export async function POST(request: Request) {
   const settings = await getSettings();
   const errors: string[] = [];
   let success = 0;
+  let squareCategories: ReturnType<typeof listSquareCategories> | null = null;
   for (const [index, id] of body.ids.entries()) {
     const product = await getProduct(id);
     if (!product) { errors.push(`Product ${id} no longer exists.`); continue; }
@@ -19,11 +20,14 @@ export async function POST(request: Request) {
         else copy.variants = copy.variants.map((variant, variantIndex) => ({ ...variant, squareVariationId: variant.squareVariationId || `DEMO-VAR-${product.etsyListingId}-${variantIndex + 1}` }));
         await markExported(product.id, product.squareItemId || `DEMO-SQ-${product.etsyListingId}`, Date.now(), copy);
       } else {
-        await exportProductToSquare(product, `${run.id}-${index}`);
+        squareCategories ||= listSquareCategories();
+        await exportProductToSquare(product, `${run.id}-${index}`, await squareCategories!);
       }
       success++;
     } catch (error) {
-      errors.push(`${product.working.title}: ${error instanceof Error ? error.message : "Export failed."}`);
+      const message = error instanceof Error ? error.message : "Export failed.";
+      if (settings.mode === "live") await markExportError(product.id, message);
+      errors.push(`${product.working.title}: ${message}`);
     }
   }
   await finishSyncRun(run.id, success, errors);

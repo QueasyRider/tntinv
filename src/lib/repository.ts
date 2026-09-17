@@ -195,7 +195,6 @@ export function validateProduct(copy: ProductCopy): ValidationIssue[] {
   if (copy.priceCents < 0) issues.push({ field: "price", message: "Price cannot be negative.", severity: "error" });
   if (copy.quantity < 0) issues.push({ field: "quantity", message: "Quantity cannot be negative.", severity: "error" });
   if (!copy.category.trim()) issues.push({ field: "category", message: "Choose a Square-ready category.", severity: "error" });
-  if (!copy.squareCategoryId) issues.push({ field: "category", message: "Category name is ready, but no Square category ID is mapped. Export will omit the category.", severity: "warning" });
   const skus = new Set<string>();
   for (const variant of copy.variants) {
     if (!variant.sku.trim()) issues.push({ field: "variants", message: `${variant.name || "Variant"} needs a SKU.`, severity: "error" });
