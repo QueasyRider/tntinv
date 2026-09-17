@@ -225,11 +225,19 @@ export async function seedDemoProducts(): Promise<number> {
   for (const seed of DEMO_PRODUCTS) {
     const product = await upsertImportedProduct(seed.etsyListingId, seed.original, seed.status);
     const working = { ...seed.original, ...seed.working, variants: seed.working?.variants ?? seed.original.variants };
-    await sql`UPDATE products SET working_json = ${JSON.stringify(working)}, status = ${seed.status}, square_item_id = ${seed.squareItemId ?? null}, last_error = ${seed.lastError ?? null}, exported_at = ${seed.status === "exported" ? new Date().toISOString() : null} WHERE id = ${product.id}`;
+    await sql`UPDATE products SET working_json = ${JSON.stringify(working)}, status = ${seed.status}, import_status = 'demo', square_item_id = ${seed.squareItemId ?? null}, last_error = ${seed.lastError ?? null}, exported_at = ${seed.status === "exported" ? new Date().toISOString() : null} WHERE id = ${product.id}`;
     count++;
   }
   await addActivity("import", `Imported ${count} products from Etsy`, "Demo data refreshed safely into the local working copy.");
   return count;
+}
+
+export async function clearDemoProducts(): Promise<void> {
+  await ensureDatabase();
+  const sql = getSql();
+  for (const seed of DEMO_PRODUCTS) {
+    await sql`DELETE FROM products WHERE etsy_listing_id = ${seed.etsyListingId} AND (import_status = 'demo' OR original_json LIKE '%/products/%')`;
+  }
 }
 
 export function getConnection(provider: "etsy"): Promise<{ summary: ConnectionSummary; config: EtsyConfig | null; token: ProviderToken | null }>;
@@ -264,15 +272,15 @@ export async function updateConnectionTest(provider: Provider, success: boolean,
 
 export async function getAppState(): Promise<AppState> {
   await ensureDatabase();
+  const settings = await getSettings();
   const countRows = await getSql()`SELECT COUNT(*)::int AS count FROM products` as Array<{ count: number }>;
-  if (!Number(countRows[0]?.count || 0)) await seedDemoProducts();
+  if (settings.mode === "demo" && !Number(countRows[0]?.count || 0)) await seedDemoProducts();
   const activityPromise = (async () => await getSql()`SELECT id, kind, title, detail, product_id, created_at FROM activities ORDER BY created_at DESC LIMIT 40` as ActivityRow[])();
   const syncPromise = (async () => await getSql()`SELECT id, direction, status, selected_count, success_count, error_count, error_json, started_at, finished_at FROM sync_runs ORDER BY started_at DESC LIMIT 50` as SyncRunRow[])();
-  const [products, activityRows, syncRows, settings, etsy, square] = await Promise.all([
+  const [products, activityRows, syncRows, etsy, square] = await Promise.all([
     getProducts(),
     activityPromise,
     syncPromise,
-    getSettings(),
     getConnection("etsy"),
     getConnection("square"),
   ]);
