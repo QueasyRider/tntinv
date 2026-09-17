@@ -1,6 +1,8 @@
 import "server-only";
 import { createHash, randomBytes } from "node:crypto";
 import { decryptJson, encryptJson } from "./crypto";
+import { buildVariationImageLookup, findVariationImage } from "./etsy-variation-images";
+import type { EtsyListingImageRef, EtsyVariationImageRef } from "./etsy-variation-images";
 import { deleteOauthState, getConnection, getOauthState, getSettings, saveConnectionToken, saveOauthState, updateConnectionTest, updateSettings, upsertImportedProduct } from "./repository";
 import type { EtsyConfig, ProviderToken } from "./repository";
 import type { ProductCopy, Variant } from "./types";
@@ -18,7 +20,7 @@ interface EtsyListing {
   price?: { amount: number; divisor: number };
   taxonomy_id?: number;
   taxonomy_path?: string[];
-  images?: Array<{ url_fullxfull?: string; url_570xN?: string }>;
+  images?: EtsyListingImageRef[];
 }
 
 interface EtsyTaxonomyNode {
@@ -31,7 +33,7 @@ interface EtsyInventory {
   products?: Array<{
     product_id: number;
     sku?: string;
-    property_values?: Array<{ property_name?: string; values?: string[] }>;
+    property_values?: Array<{ property_id?: number; property_name?: string; value_ids?: number[]; values?: string[] }>;
     offerings?: Array<{ quantity: number; is_enabled: boolean; price?: { amount: number; divisor: number } }>;
   }>;
 }
@@ -152,8 +154,46 @@ async function getListingInventories(listings: EtsyListing[]): Promise<Map<numbe
   return inventories;
 }
 
-async function listingToProduct(listing: EtsyListing, taxonomy: Map<number, string>, inventory: EtsyInventory | null): Promise<ProductCopy> {
+async function getListingImages(listing: EtsyListing): Promise<EtsyListingImageRef[]> {
+  let listingImages = listing.images || [];
+  if (!listingImages.length) {
+    try {
+      const imageResponse = await etsyFetch<{ results?: EtsyListingImageRef[] }>(`/listings/${listing.listing_id}/images`);
+      listingImages = imageResponse.results || [];
+    } catch (error) {
+      console.warn(JSON.stringify({
+        level: "warning",
+        message: "Etsy image import failed",
+        listingId: listing.listing_id,
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    }
+  }
+  return listingImages;
+}
+
+async function getVariationImageLookup(shopId: string, listingId: number, listingImages: EtsyListingImageRef[]): Promise<Map<string, string>> {
+  try {
+    const response = await etsyFetch<{ results?: EtsyVariationImageRef[] }>(`/shops/${shopId}/listings/${listingId}/variation-images`);
+    return buildVariationImageLookup(response.results || [], listingImages);
+  } catch (error) {
+    console.warn(JSON.stringify({
+      level: "warning",
+      message: "Etsy variation image import failed",
+      listingId,
+      error: error instanceof Error ? error.message : String(error),
+    }));
+    return new Map();
+  }
+}
+
+async function listingToProduct(listing: EtsyListing, taxonomy: Map<number, string>, inventory: EtsyInventory | null, shopId: string): Promise<ProductCopy> {
   const products = inventory?.products || [];
+  const listingImages = await getListingImages(listing);
+  const hasVariants = products.some((product) => product.property_values?.some((property) => property.values?.length || property.value_ids?.length));
+  const variationImageLookup = hasVariants
+    ? await getVariationImageLookup(shopId, listing.listing_id, listingImages)
+    : new Map<string, string>();
   const variants: Variant[] = products.map((product) => {
     const offering = product.offerings?.find((item) => item.is_enabled) ?? product.offerings?.[0];
     const values = product.property_values?.flatMap((property) => property.values || []) || [];
@@ -167,22 +207,9 @@ async function listingToProduct(listing: EtsyListing, taxonomy: Map<number, stri
       sku: product.sku?.trim() || `${listing.listing_id}-${product.product_id}`,
       priceCents: cents(offering?.price, cents(listing.price)),
       quantity: offering?.quantity ?? 0,
+      image: findVariationImage(product.property_values, variationImageLookup),
     };
   });
-  let listingImages = listing.images || [];
-  if (!listingImages.length) {
-    try {
-      const imageResponse = await etsyFetch<{ results?: Array<{ url_fullxfull?: string; url_570xN?: string }> }>(`/listings/${listing.listing_id}/images`);
-      listingImages = imageResponse.results || [];
-    } catch (error) {
-      console.warn(JSON.stringify({
-        level: "warning",
-        message: "Etsy image import failed",
-        listingId: listing.listing_id,
-        error: error instanceof Error ? error.message : String(error),
-      }));
-    }
-  }
   const images = listingImages.map((image) => image.url_fullxfull || image.url_570xN).filter(Boolean) as string[];
   if (!images.length) {
     console.warn(JSON.stringify({ level: "warning", message: "Etsy listing returned no usable images", listingId: listing.listing_id }));
@@ -217,16 +244,24 @@ export async function importFromEtsy(): Promise<EtsyImportResult> {
   let missingImageCount = 0;
   let variationListingCount = 0;
   let variantCount = 0;
-  for (const listing of listings) {
-    const product = await listingToProduct(listing, taxonomy, inventories.get(listing.listing_id) || null);
-    if (!product.images.length) missingImageCount++;
-    if (product.variants.length) {
-      variationListingCount++;
-      variantCount += product.variants.length;
+  let variantImageCount = 0;
+  for (let index = 0; index < listings.length; index += 4) {
+    const listingBatch = listings.slice(index, index + 4);
+    const products = await Promise.all(listingBatch.map(async (listing) => ({
+      listing,
+      product: await listingToProduct(listing, taxonomy, inventories.get(listing.listing_id) || null, shopId),
+    })));
+    for (const { listing, product } of products) {
+      if (!product.images.length) missingImageCount++;
+      if (product.variants.length) {
+        variationListingCount++;
+        variantCount += product.variants.length;
+        variantImageCount += product.variants.filter((variant) => Boolean(variant.image)).length;
+      }
+      await upsertImportedProduct(String(listing.listing_id), product);
     }
-    await upsertImportedProduct(String(listing.listing_id), product);
   }
-  console.log(JSON.stringify({ level: "info", message: "Etsy variations mapped", variationListingCount, variantCount }));
+  console.log(JSON.stringify({ level: "info", message: "Etsy variations mapped", variationListingCount, variantCount, variantImageCount }));
   return { count: listings.length, missingImageCount };
 }
 

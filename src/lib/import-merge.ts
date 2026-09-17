@@ -69,6 +69,7 @@ function mergeVariant(etsyListingId: string, previousOriginal: Variant, working:
     sku: mergeSku(etsyListingId, previousOriginal.sku, working.sku, imported.sku),
     priceCents: mergeValue(previousOriginal.priceCents, working.priceCents, imported.priceCents),
     quantity: mergeValue(previousOriginal.quantity, working.quantity, imported.quantity),
+    image: mergeValue(previousOriginal.image, working.image, imported.image),
     squareVariationId: working.squareVariationId,
   };
 }

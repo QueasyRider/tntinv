@@ -215,6 +215,7 @@ td a { display: inline-flex; align-items: center; gap: 4px; color: #2472ba; }
 .variant-row button { display: grid; place-items: center; }
 .variant-thumb-cell { display: grid; place-items: center; padding: 4px !important; }
 .variant-thumb { width: 34px; height: 34px; border: 1px solid #aaa; border-radius: 3px; background: #ded6c4 center/cover no-repeat; }
+.variant-thumb-empty { color: #aaa; font: 700 14px var(--mono); }
 .diff-view, .product-history { margin-top: 12px; border: 1px solid var(--line); background: #faf8f1; }
 .diff-heading { display: grid; grid-template-columns: 1fr 40px 1fr; padding: 18px; background: var(--ink); color: white; }
 .diff-heading > div:last-child { text-align: right; }

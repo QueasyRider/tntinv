@@ -10,6 +10,7 @@ export interface Variant {
   sku: string;
   priceCents: number;
   quantity: number;
+  image?: string;
   squareVariationId?: string | null;
 }
 
