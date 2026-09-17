@@ -16,8 +16,15 @@ interface EtsyListing {
   quantity: number;
   tags?: string[];
   price?: { amount: number; divisor: number };
+  taxonomy_id?: number;
   taxonomy_path?: string[];
   images?: Array<{ url_fullxfull?: string; url_570xN?: string }>;
+}
+
+interface EtsyTaxonomyNode {
+  id: number;
+  name: string;
+  children?: EtsyTaxonomyNode[];
 }
 
 interface EtsyInventory {
@@ -87,7 +94,21 @@ async function getConnectedShop(): Promise<{ shopId: string; label: string }> {
 
 const cents = (money: { amount: number; divisor: number } | undefined, fallback = 0) => money?.divisor ? Math.round((money.amount / money.divisor) * 100) : fallback;
 
-async function listingToProduct(listing: EtsyListing): Promise<ProductCopy> {
+async function getSellerTaxonomy(): Promise<Map<number, string>> {
+  const response = await etsyFetch<{ results?: EtsyTaxonomyNode[] }>("/seller-taxonomy/nodes");
+  const categories = new Map<number, string>();
+  const visit = (nodes: EtsyTaxonomyNode[], parents: string[] = []) => {
+    for (const node of nodes) {
+      const path = [...parents, node.name];
+      categories.set(node.id, path.join(" > "));
+      if (node.children?.length) visit(node.children, path);
+    }
+  };
+  visit(response.results || []);
+  return categories;
+}
+
+async function listingToProduct(listing: EtsyListing, taxonomy: Map<number, string>): Promise<ProductCopy> {
   const [inventory, imageResponse] = await Promise.all([
     etsyFetch<EtsyInventory>(`/listings/${listing.listing_id}/inventory`).catch(() => ({ products: [] })),
     etsyFetch<{ results?: Array<{ url_fullxfull?: string; url_570xN?: string }> }>(`/listings/${listing.listing_id}/images`).catch(() => ({ results: listing.images || [] })),
@@ -103,7 +124,7 @@ async function listingToProduct(listing: EtsyListing): Promise<ProductCopy> {
       name: values.join(" / ") || "Regular",
       optionName: names?.join(" / ") || "Option",
       optionValue: values.join(" / ") || "Regular",
-      sku: product.sku || `ETSY-${listing.listing_id}-${product.product_id}`,
+      sku: product.sku?.trim() || `${listing.listing_id}-${product.product_id}`,
       priceCents: cents(offering?.price, cents(listing.price)),
       quantity: offering?.quantity ?? 0,
     };
@@ -113,8 +134,8 @@ async function listingToProduct(listing: EtsyListing): Promise<ProductCopy> {
     title: listing.title,
     description: listing.description,
     priceCents: variants[0]?.priceCents ?? cents(listing.price),
-    sku: variants[0]?.sku || `ETSY-${listing.listing_id}`,
-    category: listing.taxonomy_path?.at(-1) || "Unmapped Etsy category",
+    sku: variants[0]?.sku || String(listing.listing_id),
+    category: (listing.taxonomy_id ? taxonomy.get(listing.taxonomy_id) : undefined) || listing.taxonomy_path?.join(" > ") || (listing.taxonomy_id ? `Etsy taxonomy #${listing.taxonomy_id}` : "Other"),
     tags: listing.tags || [],
     quantity: variants.length ? variants.reduce((sum, variant) => sum + variant.quantity, 0) : listing.quantity,
     state: listing.state,
@@ -125,6 +146,7 @@ async function listingToProduct(listing: EtsyListing): Promise<ProductCopy> {
 
 export async function importFromEtsy(): Promise<number> {
   const { shopId } = await getConnectedShop();
+  const taxonomy = await getSellerTaxonomy().catch(() => new Map<number, string>());
   let offset = 0;
   const listings: EtsyListing[] = [];
   do {
@@ -135,7 +157,7 @@ export async function importFromEtsy(): Promise<number> {
   } while (offset < 10_000);
 
   for (const listing of listings) {
-    await upsertImportedProduct(String(listing.listing_id), await listingToProduct(listing));
+    await upsertImportedProduct(String(listing.listing_id), await listingToProduct(listing, taxonomy));
   }
   return listings.length;
 }
