@@ -23,6 +23,7 @@ export interface ProductCopy {
   shopSection?: string;
   etsyTaxonomy?: string;
   squareCategoryId?: string;
+  isTaxable: boolean;
   tags: string[];
   quantity: number;
   state: string;

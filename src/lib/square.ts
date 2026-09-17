@@ -171,6 +171,8 @@ function squareObject(product: Product, copy: ProductCopy, variants: Variant[], 
       description_html: plainTextToSquareHtml(copy.description),
       product_type: "REGULAR",
       ...(copy.squareCategoryId ? { categories: [{ id: copy.squareCategoryId }] } : {}),
+      ...(copy.squareCategoryId ? { reporting_category: { id: copy.squareCategoryId } } : {}),
+      is_taxable: copy.isTaxable,
       variations: variationObjects,
     },
   };

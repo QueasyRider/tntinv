@@ -51,6 +51,7 @@ export function normalizeProductText(copy: ProductCopy): ProductCopy {
     category: decodeHtmlEntities(copy.category),
     shopSection: decodeOptional(copy.shopSection),
     etsyTaxonomy: decodeOptional(copy.etsyTaxonomy),
+    isTaxable: copy.isTaxable !== false,
     tags: copy.tags.map(decodeHtmlEntities),
     variants: copy.variants.map((variant) => ({
       ...variant,

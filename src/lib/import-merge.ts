@@ -92,6 +92,7 @@ export function rebaseImportedProductCopy(imported: ProductCopy, working: Produc
   return {
     ...imported,
     squareCategoryId: sameValue(imported.category, working.category) ? working.squareCategoryId : undefined,
+    isTaxable: working.isTaxable,
     variants: imported.variants.map((variant) => retainSquareVariationMapping(variant, working.variants)),
   };
 }
@@ -113,6 +114,7 @@ export function mergeImportedProductCopy(
     shopSection: imported.shopSection,
     etsyTaxonomy: imported.etsyTaxonomy,
     squareCategoryId: importedCategoryChanged ? undefined : working.squareCategoryId,
+    isTaxable: mergeValue(previousOriginal.isTaxable, working.isTaxable, imported.isTaxable),
     tags: mergeValue(previousOriginal.tags, working.tags, imported.tags),
     quantity: mergeValue(previousOriginal.quantity, working.quantity, imported.quantity),
     state: mergeValue(previousOriginal.state, working.state, imported.state),

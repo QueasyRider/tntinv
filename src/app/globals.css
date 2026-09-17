@@ -181,6 +181,18 @@ td a { display: inline-flex; align-items: center; gap: 4px; color: #2472ba; }
 .field input:focus, .field textarea:focus, .field select:focus { border-color: #277fcb; box-shadow: 0 0 0 2px #277fcb22; }
 .field.changed input, .field.changed textarea { background: #f2f9bf; box-shadow: inset 3px 0 var(--lime); }
 .field small { display: block; color: var(--muted); font-size: 9px; margin-top: 4px; }
+.tax-toggle { grid-column: 1 / -1; position: relative; display: grid; grid-template-columns: 38px 1fr auto; align-items: center; gap: 10px; min-height: 48px; padding: 8px 10px; border: 1px solid #aeb3b5; border-radius: 3px; background: white; cursor: pointer; }
+.tax-toggle.changed { background: #f2f9bf; box-shadow: inset 3px 0 var(--lime); }
+.tax-toggle > input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.tax-toggle-track { width: 36px; height: 20px; display: flex; align-items: center; padding: 2px; border: 1px solid #879096; border-radius: 12px; background: #d9d9d4; transition: background .15s ease; }
+.tax-toggle-track i { width: 14px; height: 14px; border-radius: 50%; background: white; box-shadow: 0 1px 3px #0004; transition: transform .15s ease; }
+.tax-toggle > input:checked + .tax-toggle-track { background: var(--lime); }
+.tax-toggle > input:checked + .tax-toggle-track i { transform: translateX(16px); }
+.tax-toggle > input:focus-visible + .tax-toggle-track { outline: 2px solid #277fcb; outline-offset: 2px; }
+.tax-toggle-copy { display: flex; flex-direction: column; gap: 2px; }
+.tax-toggle-copy strong { font-size: 10px; }
+.tax-toggle-copy small { color: var(--muted); font-size: 9px; }
+.tax-toggle > b { font-size: 9px; color: #176b4a; }
 .images-field > div { display: flex; gap: 6px; }
 .editable-image, .add-image { width: 52px; height: 52px; position: relative; display: grid; place-items: center; border: 1px dashed #879096; background: #ddd center/cover; border-radius: 3px; }
 .editable-image > svg { position: absolute; left: 2px; bottom: 2px; padding: 2px; background: white; }

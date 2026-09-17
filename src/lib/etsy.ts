@@ -252,6 +252,7 @@ async function listingToProduct(
     category: shopSection || etsyTaxonomy,
     shopSection,
     etsyTaxonomy,
+    isTaxable: true,
     tags: listing.tags || [],
     quantity: variants.length ? variants.reduce((sum, variant) => sum + variant.quantity, 0) : listing.quantity,
     state: listing.state,
