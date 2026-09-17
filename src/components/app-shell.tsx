@@ -11,7 +11,19 @@ import { Sidebar, type View } from "./sidebar";
 import { Topbar } from "./topbar";
 import type { AppState, Product, ProductCopy } from "@/lib/types";
 
-interface ApiResult { ok: boolean; error?: string; errors?: string[]; state?: AppState; count?: number; missingImageCount?: number; success?: number; label?: string }
+interface ApiResult { ok: boolean; error?: string; errors?: string[]; state?: AppState; count?: number; missingImageCount?: number; success?: number; label?: string; total?: number; nextOffset?: number; done?: boolean; runId?: string }
+
+async function readApiResult(response: Response): Promise<ApiResult> {
+  const raw = await response.text();
+  try {
+    return JSON.parse(raw) as ApiResult;
+  } catch {
+    if ([502, 503, 504].includes(response.status)) {
+      throw new Error("The import server was interrupted while processing this batch. Products from completed batches were saved; click Import from Etsy to safely retry.");
+    }
+    throw new Error(`The server returned an unexpected response (${response.status}). Please try again.`);
+  }
+}
 
 export function AppShell({ initialState }: { initialState: AppState }) {
   const [state, setState] = useState(initialState);
@@ -39,27 +51,41 @@ export function AppShell({ initialState }: { initialState: AppState }) {
     return () => window.clearTimeout(timer);
   }, []);
 
-  async function call(url: string, label: string, init: RequestInit = {}) {
-    setBusy(label);
+  async function call(url: string, label: string, init: RequestInit = {}, manageBusy = true) {
+    if (manageBusy) setBusy(label);
     try {
       const response = await fetch(url, { ...init, headers: { "Content-Type": "application/json", ...init.headers } });
-      const result = await response.json() as ApiResult;
+      const result = await readApiResult(response);
       if (result.state) setState(result.state);
       if (!response.ok || !result.ok) throw new Error(result.error || result.errors?.join(" ") || "Request failed.");
       return result;
-    } finally { setBusy(null); }
+    } finally { if (manageBusy) setBusy(null); }
   }
 
   const notifyError = (error: unknown) => setToast({ tone: "error", message: error instanceof Error ? error.message : "Something went wrong." });
   const openProduct = (product: Product) => { setActiveProductId(product.id); setView("inventory"); window.scrollTo({ top: 0, behavior: "smooth" }); };
 
   async function runImport() {
+    setBusy("import");
+    let offset = 0;
+    let runId: string | undefined;
+    let importedCount = 0;
+    let missingImageCount = 0;
     try {
-      const result = await call("/api/import", "import", { method: "POST" });
-      const imageNote = result.missingImageCount ? ` ${result.missingImageCount} listing${result.missingImageCount === 1 ? "" : "s"} still need an image.` : "";
-      setToast({ tone: "success", message: `${result.count || 0} Etsy products refreshed into the local working copy.${imageNote}` });
+      while (true) {
+        const result = await call("/api/import", "import", { method: "POST", body: JSON.stringify({ offset, runId }) }, false);
+        importedCount += result.count || 0;
+        missingImageCount += result.missingImageCount || 0;
+        if (result.done) break;
+        if (!result.runId || typeof result.nextOffset !== "number" || result.nextOffset <= offset) throw new Error("The Etsy import stopped before the next batch could begin. Please try again.");
+        runId = result.runId;
+        offset = result.nextOffset;
+      }
+      const imageNote = missingImageCount ? ` ${missingImageCount} listing${missingImageCount === 1 ? "" : "s"} still need an image.` : "";
+      setToast({ tone: "success", message: `${importedCount} Etsy products refreshed into the local working copy.${imageNote}` });
     }
     catch (error) { notifyError(error); }
+    finally { setBusy(null); }
   }
   async function runExport(ids: string[]) {
     if (!ids.length) { setToast({ tone: "error", message: "Select at least one product first." }); return; }

@@ -53,6 +53,14 @@ interface EtsyBatchInventoryResult {
 export interface EtsyImportResult {
   count: number;
   missingImageCount: number;
+  total: number;
+  nextOffset: number;
+  done: boolean;
+}
+
+interface EtsyImportOptions {
+  offset?: number;
+  limit?: number;
 }
 
 async function refreshEtsyToken(config: EtsyConfig, token: ProviderToken): Promise<ProviderToken> {
@@ -252,20 +260,19 @@ async function listingToProduct(
   });
 }
 
-export async function importFromEtsy(): Promise<EtsyImportResult> {
+export async function importFromEtsy(options: EtsyImportOptions = {}): Promise<EtsyImportResult> {
   const { shopId } = await getConnectedShop();
   const [taxonomy, shopSections] = await Promise.all([
     getSellerTaxonomy().catch(() => new Map<number, string>()),
     getShopSections(shopId),
   ]);
-  let offset = 0;
-  const listings: EtsyListing[] = [];
-  do {
-    const page = await etsyFetch<{ count: number; results: EtsyListing[] }>(`/shops/${shopId}/listings?state=active&limit=100&offset=${offset}&includes=Images`);
-    listings.push(...(page.results || []));
-    offset += page.results?.length || 0;
-    if (!page.results?.length || offset >= page.count) break;
-  } while (offset < 10_000);
+  const offset = Math.max(0, Math.floor(options.offset || 0));
+  const limit = Math.min(100, Math.max(1, Math.floor(options.limit || 12)));
+  const page = await etsyFetch<{ count: number; results: EtsyListing[] }>(`/shops/${shopId}/listings?state=active&limit=${limit}&offset=${offset}&includes=Images`);
+  const listings = page.results || [];
+  const total = Math.max(0, page.count || 0);
+  const nextOffset = offset + listings.length;
+  const done = listings.length === 0 || nextOffset >= total;
 
   const inventories = await getListingInventories(listings);
   let missingImageCount = 0;
@@ -288,8 +295,8 @@ export async function importFromEtsy(): Promise<EtsyImportResult> {
       await upsertImportedProduct(String(listing.listing_id), product);
     }
   }
-  console.log(JSON.stringify({ level: "info", message: "Etsy variations mapped", variationListingCount, variantCount, variantImageCount }));
-  return { count: listings.length, missingImageCount };
+  console.log(JSON.stringify({ level: "info", message: "Etsy import batch mapped", offset, count: listings.length, total, variationListingCount, variantCount, variantImageCount }));
+  return { count: listings.length, missingImageCount, total, nextOffset, done };
 }
 
 export async function createEtsyAuthorizeUrl(): Promise<string> {

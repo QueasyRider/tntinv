@@ -414,6 +414,30 @@ export async function finishSyncRun(id: string, success: number, errors: string[
   await getSql()`UPDATE sync_runs SET status = ${status}, success_count = ${success}, error_count = ${errors.length}, error_json = ${errors.length ? JSON.stringify(errors) : null}, finished_at = ${new Date().toISOString()} WHERE id = ${id}`;
 }
 
+export async function updateSyncRunProgress(id: string, selectedCount: number, successDelta: number): Promise<number> {
+  await ensureDatabase();
+  const rows = await getSql()`
+    UPDATE sync_runs
+    SET selected_count = ${selectedCount}, success_count = success_count + ${successDelta}
+    WHERE id = ${id} AND status = 'running'
+    RETURNING success_count
+  ` as Array<{ success_count: number }>;
+  if (!rows[0]) throw new Error("This import session is no longer active. Start the Etsy import again.");
+  return Number(rows[0].success_count);
+}
+
+export async function failSyncRun(id: string, error: string): Promise<void> {
+  await ensureDatabase();
+  await getSql()`
+    UPDATE sync_runs
+    SET status = CASE WHEN success_count > 0 THEN 'partial' ELSE 'failed' END,
+        error_count = 1,
+        error_json = ${JSON.stringify([error])},
+        finished_at = ${new Date().toISOString()}
+    WHERE id = ${id} AND status = 'running'
+  `;
+}
+
 export async function getSyncRuns(): Promise<SyncRun[]> {
   await ensureDatabase();
   const rows = await getSql()`SELECT id, direction, status, selected_count, success_count, error_count, error_json, started_at, finished_at FROM sync_runs ORDER BY started_at DESC LIMIT 50` as SyncRunRow[];
