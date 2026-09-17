@@ -1,7 +1,7 @@
 import "server-only";
 import { createHash, randomBytes } from "node:crypto";
 import { decryptJson, encryptJson } from "./crypto";
-import { deleteOauthState, getConnection, getOauthState, getSettings, saveConnectionToken, saveOauthState, updateConnectionTest, upsertImportedProduct } from "./repository";
+import { deleteOauthState, getConnection, getOauthState, getSettings, saveConnectionToken, saveOauthState, updateConnectionTest, updateSettings, upsertImportedProduct } from "./repository";
 import type { EtsyConfig, ProviderToken } from "./repository";
 import type { ProductCopy, Variant } from "./types";
 
@@ -75,6 +75,16 @@ async function etsyFetch<T>(path: string, retry = true): Promise<T> {
   return body;
 }
 
+async function getConnectedShop(): Promise<{ shopId: string; label: string }> {
+  const user = await etsyFetch<{ user_id?: number; first_name?: string; login_name?: string }>("/users/me");
+  if (!user.user_id) throw new Error("Etsy did not return the connected user ID.");
+  const shop = await etsyFetch<{ shop_id?: number; shop_name?: string }>(`/users/${user.user_id}/shops`);
+  if (!shop.shop_id) throw new Error("No Etsy shop was found for the connected account.");
+  const shopId = String(shop.shop_id);
+  await updateSettings({ etsyShopId: shopId });
+  return { shopId, label: shop.shop_name || user.first_name || user.login_name || `Etsy shop ${shopId}` };
+}
+
 const cents = (money: { amount: number; divisor: number } | undefined, fallback = 0) => money?.divisor ? Math.round((money.amount / money.divisor) * 100) : fallback;
 
 async function listingToProduct(listing: EtsyListing): Promise<ProductCopy> {
@@ -114,10 +124,7 @@ async function listingToProduct(listing: EtsyListing): Promise<ProductCopy> {
 }
 
 export async function importFromEtsy(): Promise<number> {
-  const settings = await getSettings();
-  const connection = await getConnection("etsy");
-  const shopId = settings.etsyShopId || connection.config?.shopId;
-  if (!shopId || !/^\d+$/.test(shopId)) throw new Error("Add the numeric Etsy shop ID in API Settings before importing.");
+  const { shopId } = await getConnectedShop();
   let offset = 0;
   const listings: EtsyListing[] = [];
   do {
@@ -166,8 +173,7 @@ export async function completeEtsyOauth(code: string, state: string): Promise<vo
 
 export async function testEtsyConnection(): Promise<string> {
   try {
-    const user = await etsyFetch<{ user_id?: number; first_name?: string; login_name?: string }>("/users/me");
-    const label = user.first_name || user.login_name || (user.user_id ? `Etsy user ${user.user_id}` : "Connected Etsy shop");
+    const { label } = await getConnectedShop();
     await updateConnectionTest("etsy", true, label);
     return label;
   } catch (error) {
