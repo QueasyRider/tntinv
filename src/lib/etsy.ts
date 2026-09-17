@@ -36,6 +36,11 @@ interface EtsyInventory {
   }>;
 }
 
+export interface EtsyImportResult {
+  count: number;
+  missingImageCount: number;
+}
+
 async function refreshEtsyToken(config: EtsyConfig, token: ProviderToken): Promise<ProviderToken> {
   if (!token.refreshToken) throw new Error("Etsy access expired and no refresh token is available. Connect Etsy again.");
   const response = await fetch(ETSY_TOKEN_URL, {
@@ -109,10 +114,15 @@ async function getSellerTaxonomy(): Promise<Map<number, string>> {
 }
 
 async function listingToProduct(listing: EtsyListing, taxonomy: Map<number, string>): Promise<ProductCopy> {
-  const [inventory, imageResponse] = await Promise.all([
-    etsyFetch<EtsyInventory>(`/listings/${listing.listing_id}/inventory`).catch(() => ({ products: [] })),
-    etsyFetch<{ results?: Array<{ url_fullxfull?: string; url_570xN?: string }> }>(`/listings/${listing.listing_id}/images`).catch(() => ({ results: listing.images || [] })),
-  ]);
+  const inventory = await etsyFetch<EtsyInventory>(`/listings/${listing.listing_id}/inventory`).catch((error: unknown) => {
+    console.warn(JSON.stringify({
+      level: "warning",
+      message: "Etsy inventory fallback used",
+      listingId: listing.listing_id,
+      error: error instanceof Error ? error.message : String(error),
+    }));
+    return { products: [] };
+  });
   const products = inventory.products || [];
   const variants: Variant[] = products.map((product) => {
     const offering = product.offerings?.find((item) => item.is_enabled) ?? product.offerings?.[0];
@@ -129,7 +139,24 @@ async function listingToProduct(listing: EtsyListing, taxonomy: Map<number, stri
       quantity: offering?.quantity ?? 0,
     };
   });
-  const images = (imageResponse.results || listing.images || []).map((image) => image.url_fullxfull || image.url_570xN).filter(Boolean) as string[];
+  let listingImages = listing.images || [];
+  if (!listingImages.length) {
+    try {
+      const imageResponse = await etsyFetch<{ results?: Array<{ url_fullxfull?: string; url_570xN?: string }> }>(`/listings/${listing.listing_id}/images`);
+      listingImages = imageResponse.results || [];
+    } catch (error) {
+      console.warn(JSON.stringify({
+        level: "warning",
+        message: "Etsy image import failed",
+        listingId: listing.listing_id,
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    }
+  }
+  const images = listingImages.map((image) => image.url_fullxfull || image.url_570xN).filter(Boolean) as string[];
+  if (!images.length) {
+    console.warn(JSON.stringify({ level: "warning", message: "Etsy listing returned no usable images", listingId: listing.listing_id }));
+  }
   return {
     title: listing.title,
     description: listing.description,
@@ -144,22 +171,25 @@ async function listingToProduct(listing: EtsyListing, taxonomy: Map<number, stri
   };
 }
 
-export async function importFromEtsy(): Promise<number> {
+export async function importFromEtsy(): Promise<EtsyImportResult> {
   const { shopId } = await getConnectedShop();
   const taxonomy = await getSellerTaxonomy().catch(() => new Map<number, string>());
   let offset = 0;
   const listings: EtsyListing[] = [];
   do {
-    const page = await etsyFetch<{ count: number; results: EtsyListing[] }>(`/shops/${shopId}/listings?state=active&limit=100&offset=${offset}`);
+    const page = await etsyFetch<{ count: number; results: EtsyListing[] }>(`/shops/${shopId}/listings?state=active&limit=100&offset=${offset}&includes=Images`);
     listings.push(...(page.results || []));
     offset += page.results?.length || 0;
     if (!page.results?.length || offset >= page.count) break;
   } while (offset < 10_000);
 
+  let missingImageCount = 0;
   for (const listing of listings) {
-    await upsertImportedProduct(String(listing.listing_id), await listingToProduct(listing, taxonomy));
+    const product = await listingToProduct(listing, taxonomy);
+    if (!product.images.length) missingImageCount++;
+    await upsertImportedProduct(String(listing.listing_id), product);
   }
-  return listings.length;
+  return { count: listings.length, missingImageCount };
 }
 
 export async function createEtsyAuthorizeUrl(): Promise<string> {

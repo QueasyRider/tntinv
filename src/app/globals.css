@@ -29,7 +29,7 @@ button:disabled, .disabled { cursor: not-allowed; opacity: .48; pointer-events: 
 a { color: inherit; }
 
 .app-shell { min-height: 100vh; display: grid; grid-template-columns: 210px minmax(0, 1fr); background-color: var(--paper); background-image: radial-gradient(#111a2010 .55px, transparent .55px); background-size: 5px 5px; }
-.app-column { grid-column: 2; min-width: 0; }
+.app-column { grid-column: 2; min-width: 0; min-height: 100vh; display: flex; flex-direction: column; }
 .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 20; width: 210px; display: flex; flex-direction: column; color: #f5f2e9; background: var(--ink); overflow: hidden; border-right: 1px solid #091015; }
 .sidebar::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .09; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 140 140' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.45'/%3E%3C/svg%3E"); }
 .brand { position: relative; z-index: 1; appearance: none; border: 0; background: transparent; color: white; text-align: left; padding: 24px 18px 26px; display: flex; flex-direction: column; transform: rotate(-1deg); }
@@ -103,6 +103,8 @@ a { color: inherit; }
 .table-scroll { overflow-x: auto; }
 table { width: 100%; min-width: 920px; border-collapse: collapse; table-layout: auto; }
 th { height: 34px; padding: 5px 9px; text-align: left; border-bottom: 1px solid var(--line); font-size: 10px; white-space: nowrap; }
+.sort-header { display: inline-flex; align-items: center; gap: 5px; border: 0; padding: 4px 0; background: transparent; color: inherit; font-size: inherit; font-weight: 800; }
+.sort-header:hover, .sort-header.active { color: #2472ba; }
 td { height: 55px; padding: 5px 9px; border-bottom: 1px solid #d4d1c7; font-size: 11px; vertical-align: middle; }
 tbody tr:hover, tbody tr.selected { background: #eaf1f6; }
 tbody tr.selected { box-shadow: inset 3px 0 #4489e6; }
@@ -125,6 +127,7 @@ td a { display: inline-flex; align-items: center; gap: 4px; color: #2472ba; }
 .table-footer div { display: flex; gap: 4px; }
 .table-footer button { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid var(--line); background: transparent; }
 .table-footer button.active { color: white; background: #477eae; }
+.table-footer button:disabled { opacity: .35; }
 .empty { min-height: 190px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; color: var(--muted); }
 .activity-rail { position: relative; padding: 22px 16px 170px; border-left: 1px solid var(--ink); background: #f8f6ef; overflow: hidden; }
 .activity-rail h2, .compare-panel h2, .preview-rail h2, .variants-panel h2, .product-history h2 { margin: 0; font: 19px/1 var(--display); letter-spacing: .3px; }
@@ -136,6 +139,7 @@ td a { display: inline-flex; align-items: center; gap: 4px; color: #2472ba; }
 .activity small { color: var(--muted); font-size: 9px; margin-top: 3px; }
 .history-link { width: 100%; margin-top: 14px; min-height: 35px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--ink); background: transparent; font-size: 10px; }
 .rail-stamp { position: absolute; left: -15px; right: -15px; bottom: -18px; padding: 55px 20px 45px; text-align: center; color: var(--ink); background: var(--lime); font: 27px/.92 var(--display); transform: rotate(-6deg); clip-path: polygon(0 24%, 18% 13%, 40% 22%, 65% 9%, 100% 17%, 100% 100%, 0 100%); }
+.legal-footer { margin-top: auto; padding: 12px 20px; border-top: 1px solid var(--line); color: var(--muted); background: #eeebe2; text-align: right; font-size: 9px; line-height: 1.45; }
 
 /* Product editor */
 .editor-page { padding: 14px 20px 88px; }
@@ -314,6 +318,7 @@ td a { display: inline-flex; align-items: center; gap: 4px; color: #2472ba; }
 @media (max-width: 860px) {
   .app-shell { display: block; padding-bottom: 64px; }
   .app-column { grid-column: auto; }
+  .legal-footer { padding: 12px 14px; text-align: center; }
   .sidebar { top: auto; right: 0; width: auto; height: 64px; flex-direction: row; border-top: 1px solid #000; }
   .brand, .sidebar-art, .sidebar-foot { display: none; }
   .sidebar nav { width: 100%; display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; padding: 5px; }

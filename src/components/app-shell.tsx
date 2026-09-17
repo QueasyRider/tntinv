@@ -11,7 +11,7 @@ import { Sidebar, type View } from "./sidebar";
 import { Topbar } from "./topbar";
 import type { AppState, Product, ProductCopy } from "@/lib/types";
 
-interface ApiResult { ok: boolean; error?: string; errors?: string[]; state?: AppState; count?: number; success?: number; label?: string }
+interface ApiResult { ok: boolean; error?: string; errors?: string[]; state?: AppState; count?: number; missingImageCount?: number; success?: number; label?: string }
 
 export function AppShell({ initialState }: { initialState: AppState }) {
   const [state, setState] = useState(initialState);
@@ -54,7 +54,11 @@ export function AppShell({ initialState }: { initialState: AppState }) {
   const openProduct = (product: Product) => { setActiveProductId(product.id); setView("inventory"); window.scrollTo({ top: 0, behavior: "smooth" }); };
 
   async function runImport() {
-    try { const result = await call("/api/import", "import", { method: "POST" }); setToast({ tone: "success", message: `${result.count || 0} Etsy products refreshed into the local working copy.` }); }
+    try {
+      const result = await call("/api/import", "import", { method: "POST" });
+      const imageNote = result.missingImageCount ? ` ${result.missingImageCount} listing${result.missingImageCount === 1 ? "" : "s"} still need an image.` : "";
+      setToast({ tone: "success", message: `${result.count || 0} Etsy products refreshed into the local working copy.${imageNote}` });
+    }
     catch (error) { notifyError(error); }
   }
   async function runExport(ids: string[]) {
@@ -95,6 +99,7 @@ export function AppShell({ initialState }: { initialState: AppState }) {
       : view === "settings" ? <Settings state={state} onSave={saveSettings} onTest={testConnection} busy={busy} />
       : view === "bulk" ? <BulkEdit products={state.products} initialSelected={selected} onApply={applyBulk} busy={busy === "bulk"} />
       : <Dashboard state={state} selected={selected} setSelected={setSelected} onOpen={openProduct} onImport={runImport} onExport={runExport} onBulk={() => setBulkModal(true)} busy={busy} inventoryOnly={view === "inventory"} />}
+    <footer className="legal-footer">‘Etsy’ is a trademark of Etsy, Inc. This Application uses Etsy&apos;s API, but is not endorsed or certified by Etsy.</footer>
   </div>
   {bulkModal && <BulkEdit products={state.products} initialSelected={selected} onApply={applyBulk} onClose={() => setBulkModal(false)} modal busy={busy === "bulk"} />}
   {toast && <div className={`toast ${toast.tone}`} role="status">{toast.tone === "success" ? <CheckCircle2 size={19} /> : <AlertTriangle size={19} />}<span>{toast.message}</span><button onClick={() => setToast(null)} aria-label="Dismiss message"><X size={17} /></button></div>}
