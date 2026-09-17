@@ -117,6 +117,7 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: #327ed2; }
 .product-cell small, .date small { display: block; color: var(--muted); margin-top: 3px; }
 td a { display: inline-flex; align-items: center; gap: 4px; color: #2472ba; }
 .mono { font-family: var(--mono); font-size: 10px; }
+.variant-count { text-align: center; font: 800 11px var(--mono); }
 .status { min-width: 86px; display: inline-flex; align-items: center; gap: 5px; border-radius: 4px; padding: 6px 8px; font-size: 10px; font-weight: 700; }
 .status.ready { background: var(--lime-soft); }
 .status.needs_review { background: #fae0a9; }
@@ -208,10 +209,12 @@ td a { display: inline-flex; align-items: center; gap: 4px; color: #2472ba; }
 .mapping strong { color: var(--pink); }
 .variants-panel { margin-top: 7px; border: 1px solid var(--line); background: #faf8f1; }
 .variants-panel > header { display: flex; align-items: center; justify-content: space-between; padding: 7px 10px; border-bottom: 1px solid var(--line); }
-.variant-row { display: grid; grid-template-columns: 1fr 1fr 1.4fr .8fr .65fr 35px; }
-.variant-row > * { min-width: 0; height: 33px; border: 0; border-right: 1px solid #ddd; border-bottom: 1px solid #ddd; background: transparent; padding: 7px 9px; font-size: 9px; }
+.variant-row { display: grid; grid-template-columns: 56px 1fr 1fr 1.4fr .8fr .65fr 35px; }
+.variant-row > * { min-width: 0; height: 44px; border: 0; border-right: 1px solid #ddd; border-bottom: 1px solid #ddd; background: transparent; padding: 7px 9px; font-size: 9px; }
 .variant-row.head > * { font-weight: 800; }
 .variant-row button { display: grid; place-items: center; }
+.variant-thumb-cell { display: grid; place-items: center; padding: 4px !important; }
+.variant-thumb { width: 34px; height: 34px; border: 1px solid #aaa; border-radius: 3px; background: #ded6c4 center/cover no-repeat; }
 .diff-view, .product-history { margin-top: 12px; border: 1px solid var(--line); background: #faf8f1; }
 .diff-heading { display: grid; grid-template-columns: 1fr 40px 1fr; padding: 18px; background: var(--ink); color: white; }
 .diff-heading > div:last-child { text-align: right; }
