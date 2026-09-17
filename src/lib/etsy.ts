@@ -36,6 +36,11 @@ interface EtsyInventory {
   }>;
 }
 
+interface EtsyBatchInventoryResult {
+  listing_id: number;
+  inventory: EtsyInventory | null;
+}
+
 export interface EtsyImportResult {
   count: number;
   missingImageCount: number;
@@ -74,17 +79,38 @@ async function connectionHeaders(forceRefresh = false) {
   };
 }
 
-async function etsyFetch<T>(path: string, retry = true): Promise<T> {
-  const response = await fetch(`${ETSY_API}${path}`, { headers: await connectionHeaders(), cache: "no-store" });
-  if (response.status === 401 && retry) {
-    const retried = await fetch(`${ETSY_API}${path}`, { headers: await connectionHeaders(true), cache: "no-store" });
-    const retriedBody = await retried.json().catch(() => ({})) as { error?: string } & T;
-    if (!retried.ok) throw new Error(retriedBody.error || `Etsy request failed (${retried.status}).`);
-    return retriedBody;
+function rateLimitDelay(response: Response, attempt: number): number {
+  const retryAfter = response.headers.get("retry-after");
+  const seconds = retryAfter ? Number(retryAfter) : Number.NaN;
+  if (Number.isFinite(seconds)) return Math.max(250, seconds * 1000);
+  const retryDate = retryAfter ? Date.parse(retryAfter) : Number.NaN;
+  if (Number.isFinite(retryDate)) return Math.max(250, retryDate - Date.now());
+  return Math.min(8_000, 500 * (2 ** attempt));
+}
+
+async function etsyFetch<T>(path: string): Promise<T> {
+  let authRetried = false;
+  let forceTokenRefresh = false;
+  let rateLimitAttempt = 0;
+  while (true) {
+    const response = await fetch(`${ETSY_API}${path}`, { headers: await connectionHeaders(forceTokenRefresh), cache: "no-store" });
+    forceTokenRefresh = false;
+    if (response.status === 401 && !authRetried) {
+      authRetried = true;
+      forceTokenRefresh = true;
+      continue;
+    }
+    if (response.status === 429 && rateLimitAttempt < 5) {
+      const delayMs = rateLimitDelay(response, rateLimitAttempt);
+      console.warn(JSON.stringify({ level: "warning", message: "Etsy rate limit retry", path, attempt: rateLimitAttempt + 1, delayMs }));
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      rateLimitAttempt++;
+      continue;
+    }
+    const body = await response.json().catch(() => ({})) as { error?: string } & T;
+    if (!response.ok) throw new Error(body.error || `Etsy request failed (${response.status}).`);
+    return body;
   }
-  const body = await response.json().catch(() => ({})) as { error?: string } & T;
-  if (!response.ok) throw new Error(body.error || `Etsy request failed (${response.status}).`);
-  return body;
 }
 
 async function getConnectedShop(): Promise<{ shopId: string; label: string }> {
@@ -113,17 +139,21 @@ async function getSellerTaxonomy(): Promise<Map<number, string>> {
   return categories;
 }
 
-async function listingToProduct(listing: EtsyListing, taxonomy: Map<number, string>): Promise<ProductCopy> {
-  const inventory = await etsyFetch<EtsyInventory>(`/listings/${listing.listing_id}/inventory`).catch((error: unknown) => {
-    console.warn(JSON.stringify({
-      level: "warning",
-      message: "Etsy inventory fallback used",
-      listingId: listing.listing_id,
-      error: error instanceof Error ? error.message : String(error),
-    }));
-    return { products: [] };
-  });
-  const products = inventory.products || [];
+async function getListingInventories(listings: EtsyListing[]): Promise<Map<number, EtsyInventory | null>> {
+  const inventories = new Map<number, EtsyInventory | null>();
+  for (let index = 0; index < listings.length; index += 100) {
+    const listingIds = listings.slice(index, index + 100).map((listing) => listing.listing_id);
+    const response = await etsyFetch<{ results?: EtsyBatchInventoryResult[] }>(`/listings/batch/inventory?listing_ids=${listingIds.join(",")}`);
+    for (const result of response.results || []) inventories.set(result.listing_id, result.inventory);
+  }
+  const missingIds = listings.filter((listing) => !inventories.has(listing.listing_id)).map((listing) => listing.listing_id);
+  if (missingIds.length) throw new Error(`Etsy did not return inventory for ${missingIds.length} listing${missingIds.length === 1 ? "" : "s"}. Import stopped to protect SKU data.`);
+  console.log(JSON.stringify({ level: "info", message: "Etsy batch inventory loaded", listingCount: inventories.size }));
+  return inventories;
+}
+
+async function listingToProduct(listing: EtsyListing, taxonomy: Map<number, string>, inventory: EtsyInventory | null): Promise<ProductCopy> {
+  const products = inventory?.products || [];
   const variants: Variant[] = products.map((product) => {
     const offering = product.offerings?.find((item) => item.is_enabled) ?? product.offerings?.[0];
     const values = product.property_values?.flatMap((property) => property.values || []) || [];
@@ -183,9 +213,10 @@ export async function importFromEtsy(): Promise<EtsyImportResult> {
     if (!page.results?.length || offset >= page.count) break;
   } while (offset < 10_000);
 
+  const inventories = await getListingInventories(listings);
   let missingImageCount = 0;
   for (const listing of listings) {
-    const product = await listingToProduct(listing, taxonomy);
+    const product = await listingToProduct(listing, taxonomy, inventories.get(listing.listing_id) || null);
     if (!product.images.length) missingImageCount++;
     await upsertImportedProduct(String(listing.listing_id), product);
   }
