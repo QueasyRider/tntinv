@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { ensureDatabase, getSql } from "./db";
 import { decryptJson, encryptJson } from "./crypto";
 import { DEMO_PRODUCTS } from "./demo";
+import { mergeImportedProductCopy, productCopiesMatch, rebaseImportedProductCopy } from "./import-merge";
 import type { Activity, AppSettings, AppState, ConnectionSummary, Product, ProductCopy, ProductStatus, Provider, SyncRun, ValidationIssue } from "./types";
 
 interface ProductRow {
@@ -146,55 +147,6 @@ async function replaceSkuIndex(productId: string, copy: ProductCopy): Promise<vo
   }
 }
 
-function retainSquareMappings(imported: ProductCopy, existing: ProductCopy): ProductCopy {
-  const existingVariants = new Map(existing.variants.map((variant) => [normalizeSku(variant.sku), variant]));
-  return {
-    ...imported,
-    squareCategoryId: existing.squareCategoryId,
-    variants: imported.variants.map((variant) => ({
-      ...variant,
-      squareVariationId: existingVariants.get(normalizeSku(variant.sku))?.squareVariationId,
-    })),
-  };
-}
-
-function generatedSkuKind(sku: string, etsyListingId: string): "legacy" | "current" | null {
-  const normalized = normalizeSku(sku);
-  const listingId = normalizeSku(etsyListingId);
-  const legacyPrefix = `ETSY-${listingId}`;
-  if (normalized === legacyPrefix || normalized.startsWith(`${legacyPrefix}-`)) return "legacy";
-  if (normalized === listingId || normalized.startsWith(`${listingId}-`)) return "current";
-  return null;
-}
-
-function refreshedSku(existingSku: string, importedSku: string, etsyListingId: string): string {
-  const imported = importedSku.trim();
-  if (!imported) return existingSku;
-  const existingKind = generatedSkuKind(existingSku, etsyListingId);
-  if (!existingSku.trim() || existingKind === "legacy") return imported;
-  if (existingKind === "current" && !generatedSkuKind(imported, etsyListingId)) return imported;
-  return existingSku;
-}
-
-function refreshGeneratedImportValues(etsyListingId: string, imported: ProductCopy, existing: ProductCopy): ProductCopy {
-  const variants = existing.variants.length
-    ? existing.variants.map((variant, index) => {
-        const importedVariant = imported.variants.find((candidate) =>
-          (variant.etsyProductId && candidate.etsyProductId === variant.etsyProductId) || candidate.id === variant.id,
-        ) || imported.variants[index];
-        return importedVariant
-          ? { ...variant, sku: refreshedSku(variant.sku, importedVariant.sku, etsyListingId) }
-          : variant;
-      })
-    : imported.variants;
-  return {
-    ...existing,
-    sku: refreshedSku(existing.sku, imported.sku, etsyListingId),
-    images: existing.images.length ? existing.images : imported.images,
-    variants,
-  };
-}
-
 export async function getSettings(): Promise<AppSettings> {
   await ensureDatabase();
   const rows = await getSql()`SELECT key, value FROM app_settings` as Array<{ key: string; value: string }>;
@@ -270,18 +222,23 @@ export async function upsertImportedProduct(etsyListingId: string, original: Pro
     const overwrittenBySku = existing.etsy_listing_id !== etsyListingId;
     const duplicateIds = new Set(skuOwnerIds.filter((ownerId) => ownerId !== existing.id));
     for (const duplicateId of duplicateIds) await sql`DELETE FROM products WHERE id = ${duplicateId}`;
+    const existingOriginal = JSON.parse(existing.original_json) as ProductCopy;
     const existingWorking = JSON.parse(existing.working_json) as ProductCopy;
-    const working = overwrittenBySku
-      ? retainSquareMappings(original, existingWorking)
-      : refreshGeneratedImportValues(etsyListingId, original, existingWorking);
+    const repairLegacyRefresh = existing.import_status === "refreshed";
+    const working = overwrittenBySku || repairLegacyRefresh
+      ? rebaseImportedProductCopy(original, existingWorking)
+      : mergeImportedProductCopy(etsyListingId, existingOriginal, existingWorking, original);
+    const workingChanged = !productCopiesMatch(existingWorking, working);
+    const nextStatus = overwrittenBySku || workingChanged ? preferredStatus : existing.status;
+    const nextError = overwrittenBySku || workingChanged ? null : existing.last_error;
     await sql`
       UPDATE products
       SET etsy_listing_id = ${etsyListingId},
           original_json = ${JSON.stringify(original)},
           working_json = ${JSON.stringify(working)},
-          status = ${overwrittenBySku ? preferredStatus : existing.status},
-          import_status = ${overwrittenBySku ? "overwritten_by_sku" : "refreshed"},
-          last_error = NULL,
+          status = ${nextStatus},
+          import_status = ${overwrittenBySku ? "overwritten_by_sku" : "reconciled"},
+          last_error = ${nextError},
           imported_at = ${now},
           updated_at = ${now}
       WHERE id = ${existing.id}

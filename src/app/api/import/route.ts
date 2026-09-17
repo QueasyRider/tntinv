@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     const result = settings.mode === "demo" ? { count: await seedDemoProducts(), missingImageCount: 0 } : await importFromEtsy();
     const { count, missingImageCount } = result;
     await finishSyncRun(run.id, count, []);
-    if (settings.mode === "live") await addActivity("import", `Imported ${count} products from Etsy`, missingImageCount ? `${missingImageCount} listing${missingImageCount === 1 ? "" : "s"} returned without a usable image.` : "Original listings stored read-only; working copies refreshed.");
+    if (settings.mode === "live") await addActivity("import", `Imported ${count} products from Etsy`, missingImageCount ? `${missingImageCount} listing${missingImageCount === 1 ? "" : "s"} returned without a usable image.` : "All Etsy fields compared and refreshed into working copies; Square mappings retained.");
     console.log(JSON.stringify({ level: "info", message: "Etsy import completed", route: "/api/import", requestId, count, missingImageCount, durationMs: Date.now() - startedAt }));
     return Response.json({ ok: true, count, missingImageCount, state: await getAppState() });
   } catch (error) {
