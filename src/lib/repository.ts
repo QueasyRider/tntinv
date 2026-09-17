@@ -158,6 +158,41 @@ function retainSquareMappings(imported: ProductCopy, existing: ProductCopy): Pro
   };
 }
 
+function generatedSkuKind(sku: string, etsyListingId: string): "legacy" | "current" | null {
+  const normalized = normalizeSku(sku);
+  const listingId = normalizeSku(etsyListingId);
+  const legacyPrefix = `ETSY-${listingId}`;
+  if (normalized === legacyPrefix || normalized.startsWith(`${legacyPrefix}-`)) return "legacy";
+  if (normalized === listingId || normalized.startsWith(`${listingId}-`)) return "current";
+  return null;
+}
+
+function refreshedSku(existingSku: string, importedSku: string, etsyListingId: string): string {
+  const imported = importedSku.trim();
+  if (!imported) return existingSku;
+  const existingKind = generatedSkuKind(existingSku, etsyListingId);
+  if (!existingSku.trim() || existingKind === "legacy") return imported;
+  if (existingKind === "current" && !generatedSkuKind(imported, etsyListingId)) return imported;
+  return existingSku;
+}
+
+function refreshGeneratedImportValues(etsyListingId: string, imported: ProductCopy, existing: ProductCopy): ProductCopy {
+  const variants = existing.variants.map((variant, index) => {
+    const importedVariant = imported.variants.find((candidate) =>
+      (variant.etsyProductId && candidate.etsyProductId === variant.etsyProductId) || candidate.id === variant.id,
+    ) || imported.variants[index];
+    return importedVariant
+      ? { ...variant, sku: refreshedSku(variant.sku, importedVariant.sku, etsyListingId) }
+      : variant;
+  });
+  return {
+    ...existing,
+    sku: refreshedSku(existing.sku, imported.sku, etsyListingId),
+    images: existing.images.length ? existing.images : imported.images,
+    variants,
+  };
+}
+
 export async function getSettings(): Promise<AppSettings> {
   await ensureDatabase();
   const rows = await getSql()`SELECT key, value FROM app_settings` as Array<{ key: string; value: string }>;
@@ -236,10 +271,7 @@ export async function upsertImportedProduct(etsyListingId: string, original: Pro
     const existingWorking = JSON.parse(existing.working_json) as ProductCopy;
     const working = overwrittenBySku
       ? retainSquareMappings(original, existingWorking)
-      : {
-          ...existingWorking,
-          images: existingWorking.images.length ? existingWorking.images : original.images,
-        };
+      : refreshGeneratedImportValues(etsyListingId, original, existingWorking);
     await sql`
       UPDATE products
       SET etsy_listing_id = ${etsyListingId},
