@@ -4,6 +4,7 @@ import { ensureDatabase, getSql } from "./db";
 import { decryptJson, encryptJson } from "./crypto";
 import { DEMO_PRODUCTS } from "./demo";
 import { mergeImportedProductCopy, productCopiesMatch, rebaseImportedProductCopy } from "./import-merge";
+import { normalizeProductText } from "./text-format";
 import type { Activity, AppSettings, AppState, ConnectionSummary, Product, ProductCopy, ProductStatus, Provider, SyncRun, ValidationIssue } from "./types";
 
 interface ProductRow {
@@ -63,11 +64,13 @@ export interface ProviderToken {
   accountId?: string;
 }
 
+const parseProductCopy = (value: string): ProductCopy => normalizeProductText(JSON.parse(value) as ProductCopy);
+
 const mapProduct = (row: ProductRow): Product => ({
   id: row.id,
   etsyListingId: row.etsy_listing_id,
-  original: JSON.parse(row.original_json) as ProductCopy,
-  working: JSON.parse(row.working_json) as ProductCopy,
+  original: parseProductCopy(row.original_json),
+  working: parseProductCopy(row.working_json),
   status: row.status,
   importStatus: row.import_status,
   squareItemId: row.square_item_id,
@@ -105,7 +108,7 @@ async function ensureSkuIndex(): Promise<void> {
       const sql = getSql();
       const products = await sql`SELECT id, working_json FROM products ORDER BY (square_item_id IS NOT NULL) DESC, updated_at DESC` as Array<{ id: string; working_json: string }>;
       for (const product of products) {
-        const working = JSON.parse(product.working_json) as ProductCopy;
+        const working = parseProductCopy(product.working_json);
         const skuKeys = productSkuKeys(working);
         const ownerIds = await findSkuOwnerIds(skuKeys);
         if (ownerIds.some((ownerId) => ownerId !== product.id)) {
@@ -221,8 +224,8 @@ export async function upsertImportedProduct(etsyListingId: string, original: Pro
     const overwrittenBySku = existing.etsy_listing_id !== etsyListingId;
     const duplicateIds = new Set(skuOwnerIds.filter((ownerId) => ownerId !== existing.id));
     for (const duplicateId of duplicateIds) await sql`DELETE FROM products WHERE id = ${duplicateId}`;
-    const existingOriginal = JSON.parse(existing.original_json) as ProductCopy;
-    const existingWorking = JSON.parse(existing.working_json) as ProductCopy;
+    const existingOriginal = parseProductCopy(existing.original_json);
+    const existingWorking = parseProductCopy(existing.working_json);
     const repairLegacyRefresh = existing.import_status === "refreshed";
     const working = overwrittenBySku || repairLegacyRefresh
       ? rebaseImportedProductCopy(original, existingWorking)

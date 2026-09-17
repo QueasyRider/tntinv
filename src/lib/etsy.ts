@@ -5,6 +5,7 @@ import { buildVariationImageLookup, findVariationImage } from "./etsy-variation-
 import type { EtsyListingImageRef, EtsyVariationImageRef } from "./etsy-variation-images";
 import { deleteOauthState, getConnection, getOauthState, getSettings, saveConnectionToken, saveOauthState, updateConnectionTest, updateSettings, upsertImportedProduct } from "./repository";
 import type { EtsyConfig, ProviderToken } from "./repository";
+import { normalizeProductText } from "./text-format";
 import type { ProductCopy, Variant } from "./types";
 
 const ETSY_API = "https://api.etsy.com/v3/application";
@@ -235,7 +236,7 @@ async function listingToProduct(
     || listing.taxonomy_path?.join(" > ")
     || (listing.taxonomy_id ? `Etsy taxonomy #${listing.taxonomy_id}` : "Other");
   const shopSection = listing.shop_section_id ? shopSections.get(listing.shop_section_id) : undefined;
-  return {
+  return normalizeProductText({
     title: listing.title,
     description: listing.description,
     priceCents: variants[0]?.priceCents ?? cents(listing.price),
@@ -248,7 +249,7 @@ async function listingToProduct(
     state: listing.state,
     images,
     variants: variants.length === 1 && variants[0].name === "Regular" ? [] : variants,
-  };
+  });
 }
 
 export async function importFromEtsy(): Promise<EtsyImportResult> {

@@ -172,7 +172,7 @@ td a { display: inline-flex; align-items: center; gap: 4px; color: #2472ba; }
 .original-fields { margin-left: 42%; }
 .original-field { margin-bottom: 8px; }
 .original-field label, .field > span, .images-field > span { display: block; margin-bottom: 4px; font-size: 9px; font-weight: 800; }
-.original-field div { min-height: 30px; padding: 7px 8px; border: 1px solid #d5d4ce; background: #efefec; font-size: 9px; line-height: 1.4; }
+.original-field div { min-height: 30px; padding: 7px 8px; border: 1px solid #d5d4ce; background: #efefec; font-size: 9px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
 .field { display: block; min-width: 0; }
 .field.full { grid-column: 1 / -1; }
@@ -195,6 +195,7 @@ td a { display: inline-flex; align-items: center; gap: 4px; color: #2472ba; }
 .preview-product h3, .preview-rail h3 { margin: 0; font-size: 11px; }
 .preview-product strong { font-size: 16px; }
 .preview-product span, .preview-rail p { font-size: 9px; color: var(--muted); }
+.preview-description { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
 .preview-variants { margin-top: 6px; border: 1px solid var(--line); }
 .preview-variants div { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; padding: 6px 8px; border-bottom: 1px solid #ddd; font-size: 9px; }
 .preview-variants div:last-child { border-bottom: 0; }
@@ -224,6 +225,7 @@ td a { display: inline-flex; align-items: center; gap: 4px; color: #2472ba; }
 .diff-arrow { transform: rotate(180deg); color: var(--lime); }
 .diff-row { display: grid; grid-template-columns: 130px 1fr 1fr; border-bottom: 1px solid #d3d1c8; }
 .diff-row > * { padding: 12px; border-right: 1px solid #d3d1c8; font-size: 11px; }
+.diff-row > div { white-space: pre-wrap; overflow-wrap: anywhere; }
 .diff-row.changed > div:last-child { background: #eff8ba; box-shadow: inset 4px 0 var(--lime); }
 .product-history { padding: 18px; }
 .product-history > div { display: grid; grid-template-columns: 160px 220px 1fr; gap: 20px; padding: 12px 0; border-bottom: 1px solid #ddd; }

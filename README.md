@@ -10,6 +10,7 @@ Etsy data is read-only. Product edits are stored in the app's Neon Postgres data
 - Etsy OAuth 2.0 authorization code flow with mandatory PKCE and the read-only `listings_r` and `shops_r` scopes
 - Square confidential-client OAuth flow with Catalog and Inventory scopes
 - Paginated Etsy listing import plus inventory, SKU, Shop Section, variation, and image hydration
+- HTML-entity normalization and line-break-preserving rich-text descriptions for Square
 - Immutable Etsy snapshots and separate editable working copies
 - Search, status filters, selection, product editing, variant editing, and bulk tools
 - Etsy-original versus Square-ready diff and validation preview

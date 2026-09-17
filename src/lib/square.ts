@@ -4,6 +4,7 @@ import { deleteOauthState, getConnection, getOauthState, getSettings, markExport
 import type { ProviderToken, SquareConfig } from "./repository";
 import { resolveExistingSquareCategory } from "./square-categories";
 import type { SquareCategorySummary } from "./square-categories";
+import { normalizeProductText, plainTextToSquareHtml } from "./text-format";
 import type { Product, ProductCopy } from "./types";
 
 const SQUARE_VERSION = "2026-09-16";
@@ -82,7 +83,7 @@ function squareObject(product: Product, copy: ProductCopy) {
     present_at_all_locations: true,
     item_data: {
       name: copy.title,
-      description_plaintext: copy.description,
+      description_html: plainTextToSquareHtml(copy.description),
       product_type: "REGULAR",
       ...(copy.squareCategoryId ? { categories: [{ id: copy.squareCategoryId }] } : {}),
       variations: sourceVariants.map((variant, index) => ({
@@ -122,7 +123,7 @@ export async function listSquareCategories(): Promise<SquareCategorySummary[]> {
 }
 
 export async function exportProductToSquare(product: Product, idempotencyKey: string, categories: SquareCategorySummary[]): Promise<void> {
-  const working = structuredClone(product.working);
+  const working = normalizeProductText(structuredClone(product.working));
   const errors = validateProduct(working).filter((issue) => issue.severity === "error");
   if (errors.length) throw new Error(errors.map((issue) => issue.message).join(" "));
   working.squareCategoryId = resolveExistingSquareCategory(working.category, working.squareCategoryId, categories);
