@@ -77,10 +77,10 @@ async function etsyFetch<T>(path: string, retry = true): Promise<T> {
 
 const cents = (money: { amount: number; divisor: number } | undefined, fallback = 0) => money?.divisor ? Math.round((money.amount / money.divisor) * 100) : fallback;
 
-async function listingToProduct(listing: EtsyListing, shopId: string): Promise<ProductCopy> {
+async function listingToProduct(listing: EtsyListing): Promise<ProductCopy> {
   const [inventory, imageResponse] = await Promise.all([
     etsyFetch<EtsyInventory>(`/listings/${listing.listing_id}/inventory`).catch(() => ({ products: [] })),
-    etsyFetch<{ results?: Array<{ url_fullxfull?: string; url_570xN?: string }> }>(`/shops/${shopId}/listings/${listing.listing_id}/images`).catch(() => ({ results: listing.images || [] })),
+    etsyFetch<{ results?: Array<{ url_fullxfull?: string; url_570xN?: string }> }>(`/listings/${listing.listing_id}/images`).catch(() => ({ results: listing.images || [] })),
   ]);
   const products = inventory.products || [];
   const variants: Variant[] = products.map((product) => {
@@ -128,7 +128,7 @@ export async function importFromEtsy(): Promise<number> {
   } while (offset < 10_000);
 
   for (const listing of listings) {
-    await upsertImportedProduct(String(listing.listing_id), await listingToProduct(listing, shopId));
+    await upsertImportedProduct(String(listing.listing_id), await listingToProduct(listing));
   }
   return listings.length;
 }
