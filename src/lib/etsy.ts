@@ -142,7 +142,7 @@ export async function createEtsyAuthorizeUrl(): Promise<string> {
   const challenge = createHash("sha256").update(verifier).digest("base64url");
   await saveOauthState("etsy", state, encryptJson({ verifier }), new Date(Date.now() + 10 * 60_000).toISOString());
   const redirectUri = `${settings.publicBaseUrl.replace(/\/$/, "")}/api/oauth/etsy/callback`;
-  const params = new URLSearchParams({ response_type: "code", client_id: connection.config.keystring, redirect_uri: redirectUri, scope: "listings_r", state, code_challenge: challenge, code_challenge_method: "S256" });
+  const params = new URLSearchParams({ response_type: "code", client_id: connection.config.keystring, redirect_uri: redirectUri, scope: "listings_r shops_r", state, code_challenge: challenge, code_challenge_method: "S256" });
   return `https://www.etsy.com/oauth/connect?${params.toString()}`;
 }
 
