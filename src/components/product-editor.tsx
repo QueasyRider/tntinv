@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowLeft, Check, GripVertical, ImagePlus, Save, Square, Upload, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Check, GripVertical, ImagePlus, Save, Square, Trash2, Upload, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { hasUnavailableSku, UNAVAILABLE_SKU_ERROR } from "@/lib/sku";
 import type { Activity, Product, ProductCopy, Variant } from "@/lib/types";
@@ -27,9 +27,9 @@ function InputField({ label, value, onChange, type = "text", className = "" }: {
   return <label className={`field ${className}`}><span>{label}</span><input type={type} value={value} onChange={(event) => onChange(event.target.value)} /></label>;
 }
 
-export function ProductEditor({ product, activities, onBack, onSave, onExport, busy }: {
+export function ProductEditor({ product, activities, onBack, onSave, onDelete, onExport, busy }: {
   product: Product; activities: Activity[]; onBack: () => void; onSave: (working: ProductCopy, ready: boolean) => Promise<void>;
-  onExport: () => void; busy: string | null;
+  onDelete: () => Promise<void>; onExport: () => void; busy: string | null;
 }) {
   const workingCopy = useMemo<ProductCopy>(() => ({
     ...product.working,
@@ -74,6 +74,6 @@ export function ProductEditor({ product, activities, onBack, onSave, onExport, b
 
     {tab === "history" && <section className="product-history"><h2>SYNC HISTORY</h2>{activities.filter((activity) => activity.productId === product.id).map((activity) => <div key={activity.id}><span>{new Date(activity.createdAt).toLocaleString()}</span><strong>{activity.title}</strong><p>{activity.detail}</p></div>)}{!activities.some((activity) => activity.productId === product.id) && <p>No product-specific history yet. The first save or export will appear here.</p>}</section>}
 
-    <footer className="editor-actions"><span className="changed-key"><i></i>{differences.length} fields changed from Etsy</span><div><button className="button outline" onClick={() => onSave(draft, false)} disabled={Boolean(busy)}><Save size={17} /> Save draft</button><button className="button lime" onClick={() => onSave(draft, true)} disabled={Boolean(busy)}><Check size={18} /> Mark ready</button><button className="button dark" onClick={() => { setTab("preview"); if (!dirty) onExport(); }} disabled={Boolean(busy)}><Upload size={17} />{dirty ? "Preview for Square" : "Export to Square"}</button></div></footer>
+    <footer className="editor-actions"><span className="changed-key"><i></i>{differences.length} fields changed from Etsy</span><div><button className="button danger" onClick={() => void onDelete()} disabled={Boolean(busy)}><Trash2 size={17} /> Delete from app</button><button className="button outline" onClick={() => onSave(draft, false)} disabled={Boolean(busy)}><Save size={17} /> Save draft</button><button className="button lime" onClick={() => onSave(draft, true)} disabled={Boolean(busy)}><Check size={18} /> Mark ready</button><button className="button dark" onClick={() => { setTab("preview"); if (!dirty) onExport(); }} disabled={Boolean(busy)}><Upload size={17} />{dirty ? "Preview for Square" : "Export to Square"}</button></div></footer>
   </main>;
 }

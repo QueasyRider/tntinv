@@ -74,6 +74,7 @@ a { color: inherit; }
 .button.lime { background: var(--lime); }
 .button.dark { background: var(--ink); color: white; }
 .button.outline { background: var(--paper-2); }
+.button.danger { border-color: #8e153f; color: #8e153f; background: var(--pink-soft); }
 .button.small { min-height: 32px; padding: 0 11px; }
 .metrics { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--line); background: #f8f6ef; margin-bottom: 14px; }
 .metric { min-height: 77px; display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-right: 1px solid var(--line); }

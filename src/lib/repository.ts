@@ -190,6 +190,15 @@ export async function getProduct(id: string): Promise<Product | null> {
   return rows[0] ? mapProduct(rows[0]) : null;
 }
 
+export async function deleteProduct(id: string): Promise<Product> {
+  await ensureDatabase();
+  const rows = await getSql()`DELETE FROM products WHERE id = ${id} RETURNING *` as ProductRow[];
+  if (!rows[0]) throw new Error("Product not found.");
+  const product = mapProduct(rows[0]);
+  await addActivity("edit", "Product removed from local inventory", `${product.working.title}. Etsy and Square were not changed.`);
+  return product;
+}
+
 export function validateProduct(copy: ProductCopy): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   if (!copy.title.trim()) issues.push({ field: "title", message: "Title is required.", severity: "error" });

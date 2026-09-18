@@ -100,6 +100,22 @@ export function AppShell({ initialState }: { initialState: AppState }) {
     try { await call(`/api/products/${activeProductId}`, "save", { method: "PATCH", body: JSON.stringify({ working, markReady }) }); setToast({ tone: "success", message: markReady ? "Product is validated and ready to export." : "Working copy saved. Etsy was not changed." }); }
     catch (error) { notifyError(error); }
   }
+  async function deleteActiveProduct() {
+    if (!activeProduct) return;
+    const confirmed = window.confirm(`Delete "${activeProduct.working.title}" from this inventory app?\n\nThis will not delete it from Etsy or Square. If the listing is still active on Etsy, the next Etsy import will add it again.`);
+    if (!confirmed) return;
+    try {
+      await call(`/api/products/${activeProduct.id}`, "delete", { method: "DELETE" });
+      setSelected((current) => {
+        const next = new Set(current);
+        next.delete(activeProduct.id);
+        return next;
+      });
+      setActiveProductId(null);
+      setToast({ tone: "success", message: "Listing removed from this inventory app. Etsy and Square were not changed." });
+    }
+    catch (error) { notifyError(error); }
+  }
   async function applyBulk(ids: string[], operation: BulkOperation) {
     try {
       const result = await call("/api/products/bulk", "bulk", { method: "POST", body: JSON.stringify({ ids, operation }) });
@@ -123,7 +139,7 @@ export function AppShell({ initialState }: { initialState: AppState }) {
   }
 
   return <div className="app-shell"><Sidebar view={view} onChange={changeView} /><div className="app-column"><Topbar connections={state.connections} />
-    {activeProduct ? <ProductEditor product={activeProduct} activities={state.activities} onBack={() => setActiveProductId(null)} onSave={saveProduct} onExport={() => runExport([activeProduct.id])} busy={busy} />
+    {activeProduct ? <ProductEditor product={activeProduct} activities={state.activities} onBack={() => setActiveProductId(null)} onSave={saveProduct} onDelete={deleteActiveProduct} onExport={() => runExport([activeProduct.id])} busy={busy} />
       : view === "history" ? <History state={state} />
       : view === "settings" ? <Settings state={state} onSave={saveSettings} onTest={testConnection} busy={busy} />
       : view === "bulk" ? <BulkEdit products={state.products} initialSelected={selected} onApply={applyBulk} busy={busy === "bulk"} />
