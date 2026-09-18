@@ -2,6 +2,7 @@
 
 import { AlertTriangle, ArrowLeft, Check, GripVertical, ImagePlus, Save, Square, Upload, X } from "lucide-react";
 import { useMemo, useState } from "react";
+import { hasUnavailableSku, UNAVAILABLE_SKU_ERROR } from "@/lib/sku";
 import type { Activity, Product, ProductCopy, Variant } from "@/lib/types";
 
 type Tab = "edit" | "preview" | "history";
@@ -41,6 +42,7 @@ export function ProductEditor({ product, activities, onBack, onSave, onExport, b
   const set = <K extends keyof ProductCopy>(key: K, value: ProductCopy[K]) => setDraft((current) => ({ ...current, [key]: value }));
   const updateVariant = (id: string, key: keyof Variant, value: string | number) => setDraft((current) => ({ ...current, variants: current.variants.map((variant) => variant.id === id ? { ...variant, [key]: value } : variant) }));
   const issues = [
+    ...(hasUnavailableSku(draft) ? [UNAVAILABLE_SKU_ERROR] : []),
     ...(!draft.title.trim() ? ["Title is required"] : []),
     ...(!draft.sku.trim() ? ["SKU is required"] : []),
     ...(!draft.category.trim() ? ["Category is required"] : []),

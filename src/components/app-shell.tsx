@@ -11,7 +11,7 @@ import { Sidebar, type View } from "./sidebar";
 import { Topbar } from "./topbar";
 import type { AppState, Product, ProductCopy } from "@/lib/types";
 
-interface ApiResult { ok: boolean; error?: string; errors?: string[]; state?: AppState; count?: number; missingImageCount?: number; success?: number; label?: string; total?: number; nextOffset?: number; done?: boolean; runId?: string }
+interface ApiResult { ok: boolean; error?: string; errors?: string[]; state?: AppState; count?: number; missingImageCount?: number; skuErrorCount?: number; success?: number; label?: string; total?: number; nextOffset?: number; done?: boolean; runId?: string }
 
 async function readApiResult(response: Response): Promise<ApiResult> {
   const raw = await response.text();
@@ -71,18 +71,21 @@ export function AppShell({ initialState }: { initialState: AppState }) {
     let runId: string | undefined;
     let importedCount = 0;
     let missingImageCount = 0;
+    let skuErrorCount = 0;
     try {
       while (true) {
         const result = await call("/api/import", "import", { method: "POST", body: JSON.stringify({ offset, runId }) }, false);
         importedCount += result.count || 0;
         missingImageCount += result.missingImageCount || 0;
+        skuErrorCount += result.skuErrorCount || 0;
         if (result.done) break;
         if (!result.runId || typeof result.nextOffset !== "number" || result.nextOffset <= offset) throw new Error("The Etsy import stopped before the next batch could begin. Please try again.");
         runId = result.runId;
         offset = result.nextOffset;
       }
       const imageNote = missingImageCount ? ` ${missingImageCount} listing${missingImageCount === 1 ? "" : "s"} still need an image.` : "";
-      setToast({ tone: "success", message: `${importedCount} Etsy products refreshed into the local working copy.${imageNote}` });
+      const skuNote = skuErrorCount ? ` ${skuErrorCount} listing${skuErrorCount === 1 ? " has" : "s have"} unavailable_sku and ${skuErrorCount === 1 ? "was" : "were"} flagged for cleanup.` : "";
+      setToast({ tone: "success", message: `${importedCount} Etsy listings processed into the local working copy.${skuNote}${imageNote}` });
     }
     catch (error) { notifyError(error); }
     finally { setBusy(null); }

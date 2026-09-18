@@ -5,6 +5,7 @@ import { buildVariationImageLookup, findVariationImage } from "./etsy-variation-
 import type { EtsyListingImageRef, EtsyVariationImageRef } from "./etsy-variation-images";
 import { deleteOauthState, getConnection, getOauthState, getSettings, saveConnectionToken, saveOauthState, updateConnectionTest, updateSettings, upsertImportedProduct } from "./repository";
 import type { EtsyConfig, ProviderToken } from "./repository";
+import { hasUnavailableSku } from "./sku";
 import { normalizeProductText } from "./text-format";
 import type { ProductCopy, Variant } from "./types";
 
@@ -53,6 +54,7 @@ interface EtsyBatchInventoryResult {
 export interface EtsyImportResult {
   count: number;
   missingImageCount: number;
+  skuErrorCount: number;
   total: number;
   nextOffset: number;
   done: boolean;
@@ -277,6 +279,7 @@ export async function importFromEtsy(options: EtsyImportOptions = {}): Promise<E
 
   const inventories = await getListingInventories(listings);
   let missingImageCount = 0;
+  let skuErrorCount = 0;
   let variationListingCount = 0;
   let variantCount = 0;
   let variantImageCount = 0;
@@ -293,11 +296,12 @@ export async function importFromEtsy(options: EtsyImportOptions = {}): Promise<E
         variantCount += product.variants.length;
         variantImageCount += product.variants.filter((variant) => Boolean(variant.image)).length;
       }
-      await upsertImportedProduct(String(listing.listing_id), product);
+      const imported = await upsertImportedProduct(String(listing.listing_id), product);
+      if (hasUnavailableSku(imported.working)) skuErrorCount++;
     }
   }
   console.log(JSON.stringify({ level: "info", message: "Etsy import batch mapped", offset, count: listings.length, total, variationListingCount, variantCount, variantImageCount }));
-  return { count: listings.length, missingImageCount, total, nextOffset, done };
+  return { count: listings.length, missingImageCount, skuErrorCount, total, nextOffset, done };
 }
 
 export async function createEtsyAuthorizeUrl(): Promise<string> {

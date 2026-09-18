@@ -29,7 +29,7 @@ export async function POST(request: Request) {
       runId = run.id;
       const count = await seedDemoProducts();
       await finishSyncRun(run.id, count, []);
-      return Response.json({ ok: true, count, missingImageCount: 0, total: count, nextOffset: count, done: true, runId, state: await getAppState() });
+      return Response.json({ ok: true, count, missingImageCount: 0, skuErrorCount: 0, total: count, nextOffset: count, done: true, runId, state: await getAppState() });
     }
 
     if (offset === 0) {
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
     }
 
     await finishSyncRun(runId, importedCount, []);
-    await addActivity("import", `Imported ${importedCount} products from Etsy`, "All Etsy fields compared and refreshed into working copies; Square mappings retained.");
+    await addActivity("import", `Processed ${importedCount} Etsy listings`, "All Etsy fields compared and refreshed into working copies; Square mappings retained. Listings with unavailable_sku were imported separately and flagged for cleanup.");
     console.log(JSON.stringify({ level: "info", message: "Etsy import completed", route: "/api/import", requestId, count: importedCount, durationMs: Date.now() - startedAt }));
     return Response.json({ ok: true, ...result, importedCount, runId, state: await getAppState() });
   } catch (error) {

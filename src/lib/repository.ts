@@ -4,6 +4,7 @@ import { ensureDatabase, getSql } from "./db";
 import { decryptJson, encryptJson } from "./crypto";
 import { DEMO_PRODUCTS } from "./demo";
 import { mergeImportedProductCopy, productCopiesMatch, rebaseImportedProductCopy } from "./import-merge";
+import { hasUnavailableSku, isUnavailableSku, normalizeSkuKey, UNAVAILABLE_SKU_ERROR, UNAVAILABLE_SKU_KEY } from "./sku";
 import { normalizeProductText } from "./text-format";
 import type { Activity, AppSettings, AppState, ConnectionSummary, Product, ProductCopy, ProductStatus, Provider, SyncRun, ValidationIssue } from "./types";
 
@@ -93,10 +94,8 @@ const mapSyncRun = (row: SyncRunRow): SyncRun => ({
   finishedAt: row.finished_at,
 });
 
-const normalizeSku = (sku: string): string => sku.trim().toUpperCase();
-
 function productSkuKeys(copy: ProductCopy): string[] {
-  return [...new Set([copy.sku, ...copy.variants.map((variant) => variant.sku)].map(normalizeSku).filter(Boolean))];
+  return [...new Set([copy.sku, ...copy.variants.map((variant) => variant.sku)].map(normalizeSkuKey).filter((sku) => Boolean(sku) && sku !== UNAVAILABLE_SKU_KEY))];
 }
 
 let skuIndexPromise: Promise<void> | null = null;
@@ -106,6 +105,7 @@ async function ensureSkuIndex(): Promise<void> {
   if (!skuIndexPromise) {
     skuIndexPromise = (async () => {
       const sql = getSql();
+      await sql`DELETE FROM product_skus WHERE sku_key = ${UNAVAILABLE_SKU_KEY}`;
       const products = await sql`SELECT id, working_json FROM products ORDER BY (square_item_id IS NOT NULL) DESC, updated_at DESC` as Array<{ id: string; working_json: string }>;
       for (const product of products) {
         const working = parseProductCopy(product.working_json);
@@ -195,15 +195,18 @@ export function validateProduct(copy: ProductCopy): ValidationIssue[] {
   if (!copy.title.trim()) issues.push({ field: "title", message: "Title is required.", severity: "error" });
   if (!copy.description.trim()) issues.push({ field: "description", message: "Description is required.", severity: "error" });
   if (!copy.sku.trim()) issues.push({ field: "sku", message: "SKU is required.", severity: "error" });
+  if (hasUnavailableSku(copy)) issues.push({ field: "sku", message: UNAVAILABLE_SKU_ERROR, severity: "error" });
   if (copy.priceCents < 0) issues.push({ field: "price", message: "Price cannot be negative.", severity: "error" });
   if (copy.quantity < 0) issues.push({ field: "quantity", message: "Quantity cannot be negative.", severity: "error" });
   if (!copy.category.trim()) issues.push({ field: "category", message: "Choose a Square-ready category.", severity: "error" });
   const skus = new Set<string>();
   for (const variant of copy.variants) {
     if (!variant.sku.trim()) issues.push({ field: "variants", message: `${variant.name || "Variant"} needs a SKU.`, severity: "error" });
-    const skuKey = normalizeSku(variant.sku);
-    if (skuKey && skus.has(skuKey)) issues.push({ field: "variants", message: `Duplicate variant SKU: ${variant.sku}.`, severity: "error" });
-    if (skuKey) skus.add(skuKey);
+    const skuKey = normalizeSkuKey(variant.sku);
+    if (!isUnavailableSku(variant.sku)) {
+      if (skuKey && skus.has(skuKey)) issues.push({ field: "variants", message: `Duplicate variant SKU: ${variant.sku}.`, severity: "error" });
+      if (skuKey) skus.add(skuKey);
+    }
     if (variant.quantity < 0 || variant.priceCents < 0) issues.push({ field: "variants", message: `${variant.name || "Variant"} has an invalid price or quantity.`, severity: "error" });
   }
   return issues;
@@ -231,15 +234,17 @@ export async function upsertImportedProduct(etsyListingId: string, original: Pro
       ? rebaseImportedProductCopy(original, existingWorking)
       : mergeImportedProductCopy(etsyListingId, existingOriginal, existingWorking, original);
     const workingChanged = !productCopiesMatch(existingWorking, working);
-    const nextStatus = overwrittenBySku || workingChanged ? preferredStatus : existing.status;
-    const nextError = overwrittenBySku || workingChanged ? null : existing.last_error;
+    const skuError = hasUnavailableSku(working) ? UNAVAILABLE_SKU_ERROR : null;
+    const nextStatus = skuError ? "error" : overwrittenBySku || workingChanged ? preferredStatus : existing.status;
+    const nextError = skuError || (overwrittenBySku || workingChanged ? null : existing.last_error);
+    const importStatus = skuError ? "sku_error" : overwrittenBySku ? "overwritten_by_sku" : "reconciled";
     await sql`
       UPDATE products
       SET etsy_listing_id = ${etsyListingId},
           original_json = ${JSON.stringify(original)},
           working_json = ${JSON.stringify(working)},
           status = ${nextStatus},
-          import_status = ${overwrittenBySku ? "overwritten_by_sku" : "reconciled"},
+          import_status = ${importStatus},
           last_error = ${nextError},
           imported_at = ${now},
           updated_at = ${now}
@@ -250,7 +255,8 @@ export async function upsertImportedProduct(etsyListingId: string, original: Pro
   }
   const id = randomUUID();
   const originalJson = JSON.stringify(original);
-  await sql`INSERT INTO products (id, etsy_listing_id, original_json, working_json, status, import_status, imported_at, updated_at) VALUES (${id}, ${etsyListingId}, ${originalJson}, ${originalJson}, ${preferredStatus}, 'imported', ${now}, ${now})`;
+  const skuError = hasUnavailableSku(original) ? UNAVAILABLE_SKU_ERROR : null;
+  await sql`INSERT INTO products (id, etsy_listing_id, original_json, working_json, status, import_status, last_error, imported_at, updated_at) VALUES (${id}, ${etsyListingId}, ${originalJson}, ${originalJson}, ${skuError ? "error" : preferredStatus}, ${skuError ? "sku_error" : "imported"}, ${skuError}, ${now}, ${now})`;
   await replaceSkuIndex(id, original);
   return (await getProduct(id))!;
 }
@@ -258,6 +264,7 @@ export async function upsertImportedProduct(etsyListingId: string, original: Pro
 export async function saveProduct(id: string, working: ProductCopy, markReady = false): Promise<Product> {
   const issues = validateProduct(working);
   const hasErrors = issues.some((issue) => issue.severity === "error");
+  const skuError = hasUnavailableSku(working) ? UNAVAILABLE_SKU_ERROR : null;
   const duplicateSkuErrors = issues.filter((issue) => issue.severity === "error" && issue.message.startsWith("Duplicate variant SKU:"));
   if (duplicateSkuErrors.length) throw new Error(duplicateSkuErrors.map((issue) => issue.message).join(" "));
   if (markReady && hasErrors) throw new Error(issues.filter((issue) => issue.severity === "error").map((issue) => issue.message).join(" "));
@@ -267,9 +274,9 @@ export async function saveProduct(id: string, working: ProductCopy, markReady = 
     const ownerIds = await findSkuOwnerIds([skuKey]);
     if (ownerIds.some((ownerId) => ownerId !== id)) throw new Error(`SKU ${skuKey} is already used by another product.`);
   }
-  const status: ProductStatus = markReady ? "ready" : "needs_review";
+  const status: ProductStatus = skuError ? "error" : markReady ? "ready" : "needs_review";
   const now = new Date().toISOString();
-  const rows = await getSql()`UPDATE products SET working_json = ${JSON.stringify(working)}, status = ${status}, last_error = NULL, updated_at = ${now} WHERE id = ${id} RETURNING id` as Array<{ id: string }>;
+  const rows = await getSql()`UPDATE products SET working_json = ${JSON.stringify(working)}, status = ${status}, last_error = ${skuError}, updated_at = ${now} WHERE id = ${id} RETURNING id` as Array<{ id: string }>;
   if (!rows.length) throw new Error("Product not found.");
   await replaceSkuIndex(id, working);
   await addActivity(markReady ? "ready" : "edit", markReady ? "Product marked ready" : "Working copy saved", working.title, id);
@@ -295,7 +302,8 @@ export async function bulkUpdate(ids: string[], operation: { type: string; value
       next.title = next.title.split(operation.value).join(operation.value2 || "");
       next.description = next.description.split(operation.value).join(operation.value2 || "");
     }
-    await sql`UPDATE products SET working_json = ${JSON.stringify(next)}, status = 'needs_review', last_error = NULL, updated_at = ${new Date().toISOString()} WHERE id = ${id}`;
+    const skuError = hasUnavailableSku(next) ? UNAVAILABLE_SKU_ERROR : null;
+    await sql`UPDATE products SET working_json = ${JSON.stringify(next)}, status = ${skuError ? "error" : "needs_review"}, last_error = ${skuError}, updated_at = ${new Date().toISOString()} WHERE id = ${id}`;
     changed++;
   }
   await addActivity("edit", `Bulk edit applied to ${changed} product${changed === 1 ? "" : "s"}`, operation.type.replaceAll("_", " "));
