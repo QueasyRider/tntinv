@@ -4,7 +4,7 @@ import { ensureDatabase, getSql } from "./db";
 import { decryptJson, encryptJson } from "./crypto";
 import { DEMO_PRODUCTS } from "./demo";
 import { mergeImportedProductCopy, productCopiesMatch, rebaseImportedProductCopy } from "./import-merge";
-import { hasUnavailableSku, isUnavailableSku, normalizeSkuKey, UNAVAILABLE_SKU_ERROR, UNAVAILABLE_SKU_KEY } from "./sku";
+import { duplicateSkuError, hasUnavailableSku, isUnavailableSku, normalizeSkuKey, UNAVAILABLE_SKU_ERROR, UNAVAILABLE_SKU_KEY } from "./sku";
 import { normalizeProductText } from "./text-format";
 import type { Activity, AppSettings, AppState, ConnectionSummary, Product, ProductCopy, ProductStatus, Provider, SyncRun, ValidationIssue } from "./types";
 
@@ -106,19 +106,18 @@ async function ensureSkuIndex(): Promise<void> {
     skuIndexPromise = (async () => {
       const sql = getSql();
       await sql`DELETE FROM product_skus WHERE sku_key = ${UNAVAILABLE_SKU_KEY}`;
-      const products = await sql`SELECT id, working_json FROM products ORDER BY (square_item_id IS NOT NULL) DESC, updated_at DESC` as Array<{ id: string; working_json: string }>;
+      await sql`DELETE FROM product_skus WHERE product_id IN (SELECT id FROM products WHERE import_status = 'inactive_on_etsy')`;
+      const products = await sql`SELECT id, working_json FROM products WHERE import_status <> 'inactive_on_etsy' ORDER BY updated_at DESC` as Array<{ id: string; working_json: string }>;
+      const indexedSkuKeys = new Set<string>();
       for (const product of products) {
         const working = parseProductCopy(product.working_json);
         const skuKeys = productSkuKeys(working);
-        const ownerIds = await findSkuOwnerIds(skuKeys);
-        if (ownerIds.some((ownerId) => ownerId !== product.id)) {
-          await sql`DELETE FROM products WHERE id = ${product.id}`;
-          continue;
-        }
         for (const skuKey of skuKeys) {
-          await sql`INSERT INTO product_skus (sku_key, product_id) VALUES (${skuKey}, ${product.id}) ON CONFLICT (sku_key) DO NOTHING`;
+          await sql`INSERT INTO product_skus (sku_key, product_id) VALUES (${skuKey}, ${product.id}) ON CONFLICT (sku_key, product_id) DO NOTHING`;
+          indexedSkuKeys.add(skuKey);
         }
       }
+      await refreshDuplicateSkuStates([...indexedSkuKeys]);
     })().catch((error) => {
       skuIndexPromise = null;
       throw error;
@@ -131,23 +130,56 @@ async function findSkuOwnerIds(skuKeys: string[]): Promise<string[]> {
   const sql = getSql();
   const ownerIds = new Set<string>();
   for (const skuKey of skuKeys) {
-    const rows = await sql`SELECT product_id FROM product_skus WHERE sku_key = ${skuKey} LIMIT 1` as Array<{ product_id: string }>;
-    if (rows[0]) ownerIds.add(rows[0].product_id);
+    const rows = await sql`SELECT product_id FROM product_skus WHERE sku_key = ${skuKey}` as Array<{ product_id: string }>;
+    rows.forEach((row) => ownerIds.add(row.product_id));
   }
   return [...ownerIds];
 }
 
+async function findProductSkuConflicts(productId: string, copy: ProductCopy): Promise<string[]> {
+  const sql = getSql();
+  const conflicts: string[] = [];
+  for (const skuKey of productSkuKeys(copy)) {
+    const rows = await sql`SELECT product_id FROM product_skus WHERE sku_key = ${skuKey} AND product_id <> ${productId} LIMIT 1` as Array<{ product_id: string }>;
+    if (rows.length) conflicts.push(skuKey);
+  }
+  return conflicts;
+}
+
+async function refreshDuplicateSkuStates(skuKeys: string[]): Promise<void> {
+  const sql = getSql();
+  const productIds = await findSkuOwnerIds([...new Set(skuKeys)]);
+  for (const productId of productIds) {
+    const rows = await sql`SELECT working_json, import_status FROM products WHERE id = ${productId} AND import_status <> 'inactive_on_etsy' LIMIT 1` as Array<{ working_json: string; import_status: string }>;
+    if (!rows[0]) continue;
+    const working = parseProductCopy(rows[0].working_json);
+    if (hasUnavailableSku(working)) {
+      await sql`UPDATE products SET status = 'error', import_status = 'sku_error', last_error = ${UNAVAILABLE_SKU_ERROR} WHERE id = ${productId}`;
+      continue;
+    }
+    const error = duplicateSkuError(await findProductSkuConflicts(productId, working));
+    if (error) {
+      await sql`UPDATE products SET status = 'error', import_status = 'duplicate_sku', last_error = ${error} WHERE id = ${productId}`;
+    } else if (rows[0].import_status === "duplicate_sku") {
+      await sql`UPDATE products SET status = 'needs_review', import_status = 'reconciled', last_error = NULL WHERE id = ${productId}`;
+    }
+  }
+}
+
 async function replaceSkuIndex(productId: string, copy: ProductCopy): Promise<void> {
   const sql = getSql();
+  const previousRows = await sql`SELECT sku_key FROM product_skus WHERE product_id = ${productId}` as Array<{ sku_key: string }>;
   const skuKeys = productSkuKeys(copy);
-  for (const skuKey of skuKeys) {
-    const rows = await sql`SELECT product_id FROM product_skus WHERE sku_key = ${skuKey} AND product_id <> ${productId} LIMIT 1` as Array<{ product_id: string }>;
-    if (rows.length) throw new Error(`SKU ${skuKey} is already used by another product.`);
-  }
   await sql`DELETE FROM product_skus WHERE product_id = ${productId}`;
   for (const skuKey of skuKeys) {
-    await sql`INSERT INTO product_skus (sku_key, product_id) VALUES (${skuKey}, ${productId})`;
+    await sql`INSERT INTO product_skus (sku_key, product_id) VALUES (${skuKey}, ${productId}) ON CONFLICT (sku_key, product_id) DO NOTHING`;
   }
+  await refreshDuplicateSkuStates([...previousRows.map((row) => row.sku_key), ...skuKeys]);
+}
+
+export async function getProductSkuConflictError(productId: string, copy: ProductCopy): Promise<string | null> {
+  await ensureSkuIndex();
+  return duplicateSkuError(await findProductSkuConflicts(productId, copy));
 }
 
 export async function getSettings(): Promise<AppSettings> {
@@ -191,9 +223,12 @@ export async function getProduct(id: string): Promise<Product | null> {
 }
 
 export async function deleteProduct(id: string): Promise<Product> {
-  await ensureDatabase();
-  const rows = await getSql()`DELETE FROM products WHERE id = ${id} RETURNING *` as ProductRow[];
+  await ensureSkuIndex();
+  const sql = getSql();
+  const skuRows = await sql`SELECT sku_key FROM product_skus WHERE product_id = ${id}` as Array<{ sku_key: string }>;
+  const rows = await sql`DELETE FROM products WHERE id = ${id} RETURNING *` as ProductRow[];
   if (!rows[0]) throw new Error("Product not found.");
+  if (skuRows.length) await refreshDuplicateSkuStates(skuRows.map((row) => row.sku_key));
   const product = mapProduct(rows[0]);
   await addActivity("edit", "Product removed from local inventory", `${product.working.title}. Etsy and Square were not changed.`);
   return product;
@@ -225,28 +260,20 @@ export async function upsertImportedProduct(etsyListingId: string, original: Pro
   await ensureSkuIndex();
   const sql = getSql();
   const listingRows = await sql`SELECT * FROM products WHERE etsy_listing_id = ${etsyListingId} LIMIT 1` as ProductRow[];
-  const skuOwnerIds = await findSkuOwnerIds(productSkuKeys(original));
-  let existing = listingRows[0];
-  if (!existing && skuOwnerIds[0]) {
-    const ownerRows = await sql`SELECT * FROM products WHERE id = ${skuOwnerIds[0]} LIMIT 1` as ProductRow[];
-    existing = ownerRows[0];
-  }
+  const existing = listingRows[0];
   const now = new Date().toISOString();
   if (existing) {
-    const overwrittenBySku = existing.etsy_listing_id !== etsyListingId;
-    const duplicateIds = new Set(skuOwnerIds.filter((ownerId) => ownerId !== existing.id));
-    for (const duplicateId of duplicateIds) await sql`DELETE FROM products WHERE id = ${duplicateId}`;
     const existingOriginal = parseProductCopy(existing.original_json);
     const existingWorking = parseProductCopy(existing.working_json);
     const repairLegacyRefresh = existing.import_status === "refreshed";
-    const working = overwrittenBySku || repairLegacyRefresh
+    const working = repairLegacyRefresh
       ? rebaseImportedProductCopy(original, existingWorking)
       : mergeImportedProductCopy(etsyListingId, existingOriginal, existingWorking, original);
     const workingChanged = !productCopiesMatch(existingWorking, working);
     const skuError = hasUnavailableSku(working) ? UNAVAILABLE_SKU_ERROR : null;
-    const nextStatus = skuError ? "error" : overwrittenBySku || workingChanged ? preferredStatus : existing.status;
-    const nextError = skuError || (overwrittenBySku || workingChanged ? null : existing.last_error);
-    const importStatus = skuError ? "sku_error" : overwrittenBySku ? "overwritten_by_sku" : "reconciled";
+    const nextStatus = skuError ? "error" : workingChanged ? preferredStatus : existing.status;
+    const nextError = skuError || (workingChanged ? null : existing.last_error);
+    const importStatus = skuError ? "sku_error" : "reconciled";
     await sql`
       UPDATE products
       SET etsy_listing_id = ${etsyListingId},
@@ -276,16 +303,17 @@ export async function saveProduct(id: string, working: ProductCopy, markReady = 
   const skuError = hasUnavailableSku(working) ? UNAVAILABLE_SKU_ERROR : null;
   const duplicateSkuErrors = issues.filter((issue) => issue.severity === "error" && issue.message.startsWith("Duplicate variant SKU:"));
   if (duplicateSkuErrors.length) throw new Error(duplicateSkuErrors.map((issue) => issue.message).join(" "));
-  if (markReady && hasErrors) throw new Error(issues.filter((issue) => issue.severity === "error").map((issue) => issue.message).join(" "));
   await ensureSkuIndex();
-  const skuKeys = productSkuKeys(working);
-  for (const skuKey of skuKeys) {
-    const ownerIds = await findSkuOwnerIds([skuKey]);
-    if (ownerIds.some((ownerId) => ownerId !== id)) throw new Error(`SKU ${skuKey} is already used by another product.`);
+  const crossProductSkuError = await getProductSkuConflictError(id, working);
+  const nextSkuError = skuError || crossProductSkuError;
+  if (markReady && (hasErrors || nextSkuError)) {
+    const messages = [...issues.filter((issue) => issue.severity === "error").map((issue) => issue.message), ...(nextSkuError ? [nextSkuError] : [])];
+    throw new Error([...new Set(messages)].join(" "));
   }
-  const status: ProductStatus = skuError ? "error" : markReady ? "ready" : "needs_review";
+  const status: ProductStatus = nextSkuError ? "error" : markReady ? "ready" : "needs_review";
   const now = new Date().toISOString();
-  const rows = await getSql()`UPDATE products SET working_json = ${JSON.stringify(working)}, status = ${status}, last_error = ${skuError}, updated_at = ${now} WHERE id = ${id} RETURNING id` as Array<{ id: string }>;
+  const importStatus = nextSkuError ? (skuError ? "sku_error" : "duplicate_sku") : "reconciled";
+  const rows = await getSql()`UPDATE products SET working_json = ${JSON.stringify(working)}, status = ${status}, import_status = ${importStatus}, last_error = ${nextSkuError}, updated_at = ${now} WHERE id = ${id} RETURNING id` as Array<{ id: string }>;
   if (!rows.length) throw new Error("Product not found.");
   await replaceSkuIndex(id, working);
   await addActivity(markReady ? "ready" : "edit", markReady ? "Product marked ready" : "Working copy saved", working.title, id);
@@ -293,6 +321,7 @@ export async function saveProduct(id: string, working: ProductCopy, markReady = 
 }
 
 export async function bulkUpdate(ids: string[], operation: { type: string; value?: string; value2?: string }): Promise<number> {
+  await ensureSkuIndex();
   let changed = 0;
   const sql = getSql();
   for (const id of ids) {
@@ -311,8 +340,9 @@ export async function bulkUpdate(ids: string[], operation: { type: string; value
       next.title = next.title.split(operation.value).join(operation.value2 || "");
       next.description = next.description.split(operation.value).join(operation.value2 || "");
     }
-    const skuError = hasUnavailableSku(next) ? UNAVAILABLE_SKU_ERROR : null;
-    await sql`UPDATE products SET working_json = ${JSON.stringify(next)}, status = ${skuError ? "error" : "needs_review"}, last_error = ${skuError}, updated_at = ${new Date().toISOString()} WHERE id = ${id}`;
+    const skuError = hasUnavailableSku(next) ? UNAVAILABLE_SKU_ERROR : await getProductSkuConflictError(id, next);
+    const importStatus = skuError ? (hasUnavailableSku(next) ? "sku_error" : "duplicate_sku") : "reconciled";
+    await sql`UPDATE products SET working_json = ${JSON.stringify(next)}, status = ${skuError ? "error" : "needs_review"}, import_status = ${importStatus}, last_error = ${skuError}, updated_at = ${new Date().toISOString()} WHERE id = ${id}`;
     changed++;
   }
   await addActivity("edit", `Bulk edit applied to ${changed} product${changed === 1 ? "" : "s"}`, operation.type.replaceAll("_", " "));
@@ -465,6 +495,13 @@ export async function hideProductsNotSeenDuringImport(id: string): Promise<numbe
       AND import_status <> 'inactive_on_etsy'
     RETURNING id
   ` as Array<{ id: string }>;
+  const affectedSkuKeys = new Set<string>();
+  for (const row of rows) {
+    const skuRows = await sql`SELECT sku_key FROM product_skus WHERE product_id = ${row.id}` as Array<{ sku_key: string }>;
+    skuRows.forEach((skuRow) => affectedSkuKeys.add(skuRow.sku_key));
+    await sql`DELETE FROM product_skus WHERE product_id = ${row.id}`;
+  }
+  if (affectedSkuKeys.size) await refreshDuplicateSkuStates([...affectedSkuKeys]);
   return rows.length;
 }
 

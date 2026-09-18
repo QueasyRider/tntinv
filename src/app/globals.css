@@ -184,6 +184,10 @@ td a { display: inline-flex; align-items: center; gap: 4px; color: #2472ba; }
 .editor-tabs button { height: 38px; border: 0; border-bottom: 3px solid transparent; background: transparent; padding: 0 10px; font-size: 12px; font-weight: 800; }
 .editor-tabs button.active { border-bottom-color: var(--lime); }
 .editor-tabs button span { display: inline-grid; place-items: center; min-width: 18px; height: 18px; margin-left: 5px; border-radius: 50%; background: var(--pink-soft); font-size: 9px; }
+.product-error-banner { display: flex; align-items: flex-start; gap: 9px; margin-top: 10px; padding: 10px 12px; border: 1px solid #b83263; color: #7e153d; background: var(--pink-soft); }
+.product-error-banner div { display: flex; flex-direction: column; gap: 3px; }
+.product-error-banner strong { font-size: 10px; }
+.product-error-banner span { font-size: 9px; }
 .compare-toolbar { height: 43px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-bottom: 0; margin-top: 12px; padding: 6px 10px; font-size: 10px; }
 .compare-toolbar button { height: 29px; border: 1px solid var(--line); background: var(--paper-2); padding: 0 12px; border-radius: 3px; }
 .compare-toolbar button.active { background: var(--ink); color: white; }

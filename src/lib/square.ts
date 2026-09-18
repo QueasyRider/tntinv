@@ -1,6 +1,6 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
-import { deleteOauthState, getConnection, getOauthState, getSettings, markExported, saveConnectionToken, saveOauthState, saveSquareCatalogMapping, updateConnectionTest, validateProduct } from "./repository";
+import { deleteOauthState, getConnection, getOauthState, getProductSkuConflictError, getSettings, markExported, saveConnectionToken, saveOauthState, saveSquareCatalogMapping, updateConnectionTest, validateProduct } from "./repository";
 import type { ProviderToken, SquareConfig } from "./repository";
 import { resolveExistingSquareCategory } from "./square-categories";
 import type { SquareCategorySummary } from "./square-categories";
@@ -311,6 +311,8 @@ export async function exportProductToSquare(product: Product, idempotencyKey: st
   const working = normalizeProductText(structuredClone(product.working));
   const errors = validateProduct(working).filter((issue) => issue.severity === "error");
   if (errors.length) throw new Error(errors.map((issue) => issue.message).join(" "));
+  const duplicateSkuIssue = await getProductSkuConflictError(product.id, working);
+  if (duplicateSkuIssue) throw new Error(duplicateSkuIssue);
   if (working.isTaxable && !taxes.enabledTaxIds.length) {
     throw new Error("This product is marked taxable, but no enabled Square tax is available at the selected location. Enable a tax in Square or mark the product non-taxable.");
   }

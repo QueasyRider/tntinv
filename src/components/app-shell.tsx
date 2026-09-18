@@ -11,7 +11,7 @@ import { Sidebar, type View } from "./sidebar";
 import { Topbar } from "./topbar";
 import type { AppState, Product, ProductCopy } from "@/lib/types";
 
-interface ApiResult { ok: boolean; error?: string; errors?: string[]; state?: AppState; count?: number; missingImageCount?: number; skuErrorCount?: number; hiddenInactiveCount?: number; consolidatedListingCount?: number; visibleProductCount?: number; success?: number; label?: string; total?: number; nextOffset?: number; done?: boolean; runId?: string }
+interface ApiResult { ok: boolean; error?: string; errors?: string[]; state?: AppState; count?: number; missingImageCount?: number; skuErrorCount?: number; hiddenInactiveCount?: number; duplicateSkuProductCount?: number; visibleProductCount?: number; success?: number; label?: string; total?: number; nextOffset?: number; done?: boolean; runId?: string }
 
 async function readApiResult(response: Response): Promise<ApiResult> {
   const raw = await response.text();
@@ -73,7 +73,7 @@ export function AppShell({ initialState }: { initialState: AppState }) {
     let missingImageCount = 0;
     let skuErrorCount = 0;
     let hiddenInactiveCount = 0;
-    let consolidatedListingCount = 0;
+    let duplicateSkuProductCount = 0;
     let visibleProductCount = 0;
     try {
       while (true) {
@@ -82,7 +82,7 @@ export function AppShell({ initialState }: { initialState: AppState }) {
         missingImageCount += result.missingImageCount || 0;
         skuErrorCount += result.skuErrorCount || 0;
         hiddenInactiveCount += result.hiddenInactiveCount || 0;
-        consolidatedListingCount = result.consolidatedListingCount || consolidatedListingCount;
+        duplicateSkuProductCount = result.duplicateSkuProductCount || duplicateSkuProductCount;
         visibleProductCount = result.visibleProductCount || visibleProductCount;
         if (result.done) break;
         if (!result.runId || typeof result.nextOffset !== "number" || result.nextOffset <= offset) throw new Error("The Etsy import stopped before the next batch could begin. Please try again.");
@@ -92,8 +92,8 @@ export function AppShell({ initialState }: { initialState: AppState }) {
       const imageNote = missingImageCount ? ` ${missingImageCount} listing${missingImageCount === 1 ? "" : "s"} still need an image.` : "";
       const skuNote = skuErrorCount ? ` ${skuErrorCount} listing${skuErrorCount === 1 ? " has" : "s have"} unavailable_sku and ${skuErrorCount === 1 ? "was" : "were"} flagged for cleanup.` : "";
       const inactiveNote = hiddenInactiveCount ? ` ${hiddenInactiveCount} non-active Etsy listing${hiddenInactiveCount === 1 ? " was" : "s were"} removed from view.` : "";
-      const consolidationNote = consolidatedListingCount ? ` ${consolidatedListingCount} listing${consolidatedListingCount === 1 ? "" : "s"} shared SKUs and ${consolidatedListingCount === 1 ? "was" : "were"} consolidated, leaving ${visibleProductCount} unique products.` : ` ${visibleProductCount || importedCount} unique products are available.`;
-      setToast({ tone: "success", message: `${importedCount} active Etsy listings processed.${consolidationNote}${inactiveNote}${skuNote}${imageNote}` });
+      const duplicateNote = duplicateSkuProductCount ? ` ${duplicateSkuProductCount} product${duplicateSkuProductCount === 1 ? "" : "s"} share SKUs and ${duplicateSkuProductCount === 1 ? "is" : "are"} marked Error for cleanup.` : "";
+      setToast({ tone: "success", message: `${importedCount} active Etsy listings processed into ${visibleProductCount || importedCount} separate products.${duplicateNote}${inactiveNote}${skuNote}${imageNote}` });
     }
     catch (error) { notifyError(error); }
     finally { setBusy(null); }
