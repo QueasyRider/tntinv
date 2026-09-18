@@ -32,7 +32,8 @@ export async function POST(request: Request) {
       runId = run.id;
       const count = await seedDemoProducts();
       await finishSyncRun(run.id, count, []);
-      return Response.json({ ok: true, count, missingImageCount: 0, skuErrorCount: 0, hiddenInactiveCount: 0, total: count, nextOffset: count, done: true, runId, state: await getAppState() });
+      const state = await getAppState();
+      return Response.json({ ok: true, count, missingImageCount: 0, skuErrorCount: 0, hiddenInactiveCount: 0, consolidatedListingCount: 0, visibleProductCount: state.metrics.imported, total: count, nextOffset: count, done: true, runId, state });
     }
 
     if (offset === 0) {
@@ -52,10 +53,14 @@ export async function POST(request: Request) {
 
     const hiddenInactiveCount = await hideProductsNotSeenDuringImport(runId);
     await finishSyncRun(runId, importedCount, []);
+    const state = await getAppState();
+    const visibleProductCount = state.metrics.imported;
+    const consolidatedListingCount = Math.max(0, importedCount - visibleProductCount);
     const inactiveDetail = hiddenInactiveCount ? ` ${hiddenInactiveCount} listing${hiddenInactiveCount === 1 ? "" : "s"} no longer active on Etsy ${hiddenInactiveCount === 1 ? "was" : "were"} removed from the app view; saved Square mappings were retained.` : "";
-    await addActivity("import", `Processed ${importedCount} active Etsy listings`, `All Etsy fields compared and refreshed into working copies; Square mappings retained. Listings with unavailable_sku were imported separately and flagged for cleanup.${inactiveDetail}`);
-    console.log(JSON.stringify({ level: "info", message: "Etsy import completed", route: "/api/import", requestId, count: importedCount, hiddenInactiveCount, durationMs: Date.now() - startedAt }));
-    return Response.json({ ok: true, ...result, importedCount, hiddenInactiveCount, runId, state: await getAppState() });
+    const consolidationDetail = consolidatedListingCount ? ` ${consolidatedListingCount} listing${consolidatedListingCount === 1 ? "" : "s"} shared existing SKUs and ${consolidatedListingCount === 1 ? "was" : "were"} consolidated, leaving ${visibleProductCount} unique products.` : "";
+    await addActivity("import", `Imported ${visibleProductCount} unique products from ${importedCount} active Etsy listings`, `All Etsy fields compared and refreshed into working copies; Square mappings retained. Listings with unavailable_sku were imported separately and flagged for cleanup.${consolidationDetail}${inactiveDetail}`);
+    console.log(JSON.stringify({ level: "info", message: "Etsy import completed", route: "/api/import", requestId, processedListingCount: importedCount, visibleProductCount, consolidatedListingCount, hiddenInactiveCount, durationMs: Date.now() - startedAt }));
+    return Response.json({ ok: true, ...result, importedCount, visibleProductCount, consolidatedListingCount, hiddenInactiveCount, runId, state });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Import failed.";
     if (runId) await failSyncRun(runId, message).catch(() => undefined);
