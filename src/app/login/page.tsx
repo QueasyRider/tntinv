@@ -28,9 +28,9 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       {error && <div className="login-error" role="alert">{error}</div>}
       <form action="/api/auth/login" method="post" className="login-form">
         <input type="hidden" name="next" value={safeNext(params.next)} />
-        <label><span>Username</span><input name="username" type="text" autoComplete="username" required autoFocus disabled={!configured} /></label>
-        <label><span>Password</span><input name="password" type="password" autoComplete="current-password" required disabled={!configured} /></label>
-        <button className="button lime" type="submit" disabled={!configured}><ShieldCheck size={18} /> Sign in securely</button>
+        <label><span>Username</span><input name="username" type="text" autoComplete="username" required autoFocus /></label>
+        <label><span>Password</span><input name="password" type="password" autoComplete="current-password" required /></label>
+        <button className="button lime" type="submit"><ShieldCheck size={18} /> Sign in securely</button>
       </form>
       <small className="login-note">Your Etsy and Square credentials remain encrypted and server-side.</small>
     </section>
