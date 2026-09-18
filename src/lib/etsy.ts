@@ -263,10 +263,14 @@ export async function importFromEtsy(options: EtsyImportOptions = {}): Promise<E
   const offset = Math.max(0, Math.floor(options.offset || 0));
   const limit = Math.min(100, Math.max(1, Math.floor(options.limit || 12)));
   const page = await etsyFetch<{ count: number; results: EtsyListing[] }>(`/shops/${shopId}/listings?state=active&limit=${limit}&offset=${offset}`);
-  const listings = page.results || [];
+  const pageListings = page.results || [];
+  const listings = pageListings.filter((listing) => listing.state === "active");
   const total = Math.max(0, page.count || 0);
-  const nextOffset = offset + listings.length;
-  const done = listings.length === 0 || nextOffset >= total;
+  const nextOffset = offset + pageListings.length;
+  const done = pageListings.length === 0 || nextOffset >= total;
+  if (listings.length !== pageListings.length) {
+    console.warn(JSON.stringify({ level: "warning", message: "Etsy returned non-active listings despite the active filter", offset, skipped: pageListings.length - listings.length }));
+  }
 
   const inventories = await getListingInventories(listings);
   let missingImageCount = 0;

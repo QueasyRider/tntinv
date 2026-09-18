@@ -180,7 +180,7 @@ export async function updateSettings(values: Partial<AppSettings>): Promise<void
 
 export async function getProducts(): Promise<Product[]> {
   await ensureDatabase();
-  const rows = await getSql()`SELECT * FROM products ORDER BY updated_at DESC` as ProductRow[];
+  const rows = await getSql()`SELECT * FROM products WHERE import_status <> 'inactive_on_etsy' ORDER BY updated_at DESC` as ProductRow[];
   return rows.map(mapProduct);
 }
 
@@ -446,6 +446,26 @@ export async function updateSyncRunProgress(id: string, selectedCount: number, s
   ` as Array<{ success_count: number }>;
   if (!rows[0]) throw new Error("This import session is no longer active. Start the Etsy import again.");
   return Number(rows[0].success_count);
+}
+
+export async function hideProductsNotSeenDuringImport(id: string): Promise<number> {
+  await ensureDatabase();
+  const sql = getSql();
+  const runs = await sql`
+    SELECT started_at
+    FROM sync_runs
+    WHERE id = ${id} AND direction = 'etsy_to_local' AND status = 'running'
+    LIMIT 1
+  ` as Array<{ started_at: string }>;
+  if (!runs[0]) throw new Error("This import session is no longer active. Start the Etsy import again.");
+  const rows = await sql`
+    UPDATE products
+    SET import_status = 'inactive_on_etsy', updated_at = ${new Date().toISOString()}
+    WHERE imported_at < ${runs[0].started_at}
+      AND import_status <> 'inactive_on_etsy'
+    RETURNING id
+  ` as Array<{ id: string }>;
+  return rows.length;
 }
 
 export async function failSyncRun(id: string, error: string): Promise<void> {
