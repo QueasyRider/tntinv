@@ -1,8 +1,11 @@
+import { requireApiSession } from "@/lib/auth";
 import { apiError } from "@/lib/http";
 import { deleteProduct, getAppState, saveProduct } from "@/lib/repository";
 import type { ProductCopy } from "@/lib/types";
 
 export async function PATCH(request: Request, context: RouteContext<"/api/products/[id]">) {
+  const unauthorized = await requireApiSession();
+  if (unauthorized) return unauthorized;
   try {
     const { id } = await context.params;
     const body = await request.json() as { working?: ProductCopy; markReady?: boolean };
@@ -15,6 +18,8 @@ export async function PATCH(request: Request, context: RouteContext<"/api/produc
 }
 
 export async function DELETE(_request: Request, context: RouteContext<"/api/products/[id]">) {
+  const unauthorized = await requireApiSession();
+  if (unauthorized) return unauthorized;
   try {
     const { id } = await context.params;
     const product = await deleteProduct(id);

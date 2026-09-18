@@ -1,8 +1,11 @@
+import { requireApiSession } from "@/lib/auth";
 import { completeEtsyOauth } from "@/lib/etsy";
 import { completeSquareOauth } from "@/lib/square";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest, context: RouteContext<"/api/oauth/[provider]/callback">) {
+  const unauthorized = await requireApiSession();
+  if (unauthorized) return unauthorized;
   const { provider } = await context.params;
   const code = request.nextUrl.searchParams.get("code");
   const state = request.nextUrl.searchParams.get("state");

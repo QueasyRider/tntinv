@@ -1,9 +1,12 @@
+import { requireApiSession } from "@/lib/auth";
 import { testEtsyConnection } from "@/lib/etsy";
 import { apiError } from "@/lib/http";
 import { addActivity, getAppState, getSettings } from "@/lib/repository";
 import { testSquareConnection } from "@/lib/square";
 
 export async function POST(_request: Request, context: RouteContext<"/api/connections/[provider]/test">) {
+  const unauthorized = await requireApiSession();
+  if (unauthorized) return unauthorized;
   try {
     const { provider } = await context.params;
     if (provider !== "etsy" && provider !== "square") throw new Error("Unknown connection provider.");

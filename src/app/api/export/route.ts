@@ -1,8 +1,11 @@
+import { requireApiSession } from "@/lib/auth";
 import { apiError } from "@/lib/http";
 import { exportProductToSquare, listSquareCategories, listSquareTaxes } from "@/lib/square";
 import { addActivity, finishSyncRun, getAppState, getProduct, getSettings, markExported, markExportError, startSyncRun } from "@/lib/repository";
 
 export async function POST(request: Request) {
+  const unauthorized = await requireApiSession();
+  if (unauthorized) return unauthorized;
   const body = await request.json().catch(() => ({})) as { ids?: string[] };
   if (!body.ids?.length) return apiError(new Error("Select at least one product to export."));
   const run = await startSyncRun("local_to_square", body.ids.length);

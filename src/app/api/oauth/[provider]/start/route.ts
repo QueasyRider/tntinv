@@ -1,8 +1,11 @@
+import { requireApiSession } from "@/lib/auth";
 import { createEtsyAuthorizeUrl } from "@/lib/etsy";
 import { createSquareAuthorizeUrl } from "@/lib/square";
 import { NextResponse } from "next/server";
 
 export async function GET(_request: Request, context: RouteContext<"/api/oauth/[provider]/start">) {
+  const unauthorized = await requireApiSession();
+  if (unauthorized) return unauthorized;
   try {
     const { provider } = await context.params;
     const url = provider === "etsy" ? await createEtsyAuthorizeUrl() : provider === "square" ? await createSquareAuthorizeUrl() : null;

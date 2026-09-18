@@ -1,3 +1,4 @@
+import { requireApiSession } from "@/lib/auth";
 import { importFromEtsy } from "@/lib/etsy";
 import { apiError } from "@/lib/http";
 import { addActivity, clearDemoProducts, failSyncRun, finishSyncRun, getAppState, getSettings, hideProductsNotSeenDuringImport, seedDemoProducts, startSyncRun, updateSyncRunProgress } from "@/lib/repository";
@@ -16,6 +17,8 @@ function nonNegativeInteger(value: unknown): number {
 }
 
 export async function POST(request: Request) {
+  const unauthorized = await requireApiSession();
+  if (unauthorized) return unauthorized;
   const startedAt = Date.now();
   const requestId = request.headers.get("x-vercel-id");
   const body = await request.json().catch(() => ({})) as ImportRequest;

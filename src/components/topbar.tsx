@@ -1,6 +1,6 @@
 "use client";
 
-import { Circle } from "lucide-react";
+import { Circle, LogOut } from "lucide-react";
 import type { ConnectionSummary } from "@/lib/types";
 
 function Connector({ label, letter, connection }: { label: string; letter: string; connection: ConnectionSummary }) {
@@ -10,5 +10,5 @@ function Connector({ label, letter, connection }: { label: string; letter: strin
 }
 
 export function Topbar({ connections }: { connections: { etsy: ConnectionSummary; square: ConnectionSummary } }) {
-  return <header className="topbar"><div className="crumb-flow">ETSY LISTINGS <span>→</span> LOCAL EDITS <span>→</span> SQUARE READY</div><div className="connections"><Connector label="Etsy" letter="E" connection={connections.etsy} /><Connector label="Square" letter="□" connection={connections.square} /></div><div className="profile"><span className="avatar">T&amp;T</span><div><strong>Twisted &amp; Thrifted</strong><small>Shop workspace</small></div></div></header>;
+  return <header className="topbar"><div className="crumb-flow">ETSY LISTINGS <span>→</span> LOCAL EDITS <span>→</span> SQUARE READY</div><div className="connections"><Connector label="Etsy" letter="E" connection={connections.etsy} /><Connector label="Square" letter="□" connection={connections.square} /></div><div className="profile"><span className="avatar">T&amp;T</span><div><strong>Twisted &amp; Thrifted</strong><small>Shop workspace</small></div><form action="/api/auth/logout" method="post"><button className="logout-button" type="submit" title="Sign out" aria-label="Sign out"><LogOut size={16} /></button></form></div></header>;
 }

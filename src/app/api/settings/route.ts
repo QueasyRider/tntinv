@@ -1,8 +1,11 @@
+import { requireApiSession } from "@/lib/auth";
 import { apiError } from "@/lib/http";
 import { getAppState, getConnection, saveConnectionConfig, updateSettings } from "@/lib/repository";
 import type { AppSettings } from "@/lib/types";
 
 export async function POST(request: Request) {
+  const unauthorized = await requireApiSession();
+  if (unauthorized) return unauthorized;
   try {
     const body = await request.json() as {
       settings?: Partial<AppSettings>;
