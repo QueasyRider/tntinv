@@ -69,7 +69,7 @@ function mergeVariant(etsyListingId: string, previousOriginal: Variant, working:
     sku: mergeSku(etsyListingId, previousOriginal.sku, working.sku, imported.sku),
     priceCents: mergeValue(previousOriginal.priceCents, working.priceCents, imported.priceCents),
     quantity: mergeValue(previousOriginal.quantity, working.quantity, imported.quantity),
-    image: imported.image,
+    image: mergeValue(previousOriginal.image, working.image, imported.image),
     squareVariationId: working.squareVariationId,
   };
 }
@@ -105,6 +105,9 @@ export function mergeImportedProductCopy(
 ): ProductCopy {
   const category = mergeValue(previousOriginal.category, working.category, imported.category);
   const importedCategoryChanged = !sameValue(imported.category, previousOriginal.category);
+  const currentImages = new Set(imported.images);
+  const variants = mergeVariants(etsyListingId, previousOriginal.variants, working.variants, imported.variants)
+    .map((variant) => variant.image && !currentImages.has(variant.image) ? { ...variant, image: undefined } : variant);
   return {
     title: mergeValue(previousOriginal.title, working.title, imported.title),
     description: mergeValue(previousOriginal.description, working.description, imported.description),
@@ -119,7 +122,7 @@ export function mergeImportedProductCopy(
     quantity: mergeValue(previousOriginal.quantity, working.quantity, imported.quantity),
     state: mergeValue(previousOriginal.state, working.state, imported.state),
     images: imported.images,
-    variants: mergeVariants(etsyListingId, previousOriginal.variants, working.variants, imported.variants),
+    variants,
   };
 }
 

@@ -150,7 +150,7 @@ function sourceVariants(copy: ProductCopy): Variant[] {
   return copy.variants.length ? copy.variants : [{ id: "regular", name: "Regular", optionName: "Option", optionValue: "Regular", sku: copy.sku, priceCents: copy.priceCents, quantity: copy.quantity, squareVariationId: null }];
 }
 
-function squareObject(product: Product, copy: ProductCopy, variants: Variant[], existingItem: SquareCatalogItem | null, taxIds: string[]) {
+function squareObject(product: Product, copy: ProductCopy, variants: Variant[], existingItem: SquareCatalogItem | null, taxIds: string[], variantImageIds?: ReadonlyMap<string, string>) {
   const itemId = existingItem?.id || `#item-${product.id}`;
   const availableVariations = (existingItem?.item_data?.variations || []).filter((variation) => !variation.is_deleted);
   const usedVariationIds = new Set<string>();
@@ -162,6 +162,7 @@ function squareObject(product: Product, copy: ProductCopy, variants: Variant[], 
     const existingVariation = storedMatch || (skuMatches.length === 1 ? skuMatches[0] : undefined);
     if (existingVariation) usedVariationIds.add(existingVariation.id);
     const variationId = existingVariation?.id || `#variation-${product.id}-${index}`;
+    const variantImageId = variant.image ? variantImageIds?.get(variant.image.trim()) : undefined;
     return {
       type: "ITEM_VARIATION",
       id: variationId,
@@ -175,6 +176,7 @@ function squareObject(product: Product, copy: ProductCopy, variants: Variant[], 
         pricing_type: "FIXED_PRICING",
         price_money: { amount: variant.priceCents, currency: "USD" },
         track_inventory: true,
+        ...(variantImageIds ? { image_ids: variantImageId ? [variantImageId] : [] } : {}),
       },
     };
   });
@@ -206,8 +208,9 @@ async function upsertSquareItem(object: ReturnType<typeof squareObject>["object"
   });
 }
 
-async function uploadSquareImages(product: Product, itemId: string, imageUrls: string[], idempotencyKey: string): Promise<void> {
+async function uploadSquareImages(product: Product, itemId: string, imageUrls: string[], idempotencyKey: string): Promise<Map<string, string>> {
   const uniqueImageUrls = [...new Set(imageUrls.map((url) => url.trim()).filter(Boolean))];
+  const imageIdsByUrl = new Map<string, string>();
   for (const [index, imageUrl] of uniqueImageUrls.entries()) {
     let imageResponse: Response;
     try {
@@ -232,8 +235,12 @@ async function uploadSquareImages(product: Product, itemId: string, imageUrls: s
       },
     }));
     form.set("image_file", await imageResponse.blob(), `etsy-product-${index + 1}.jpg`);
-    await squareFetch("/v2/catalog/images", { method: "POST", body: form });
+    const result = await squareFetch<{ image?: { id?: string } }>("/v2/catalog/images", { method: "POST", body: form });
+    const squareImageId = result.image?.id;
+    if (!squareImageId) throw new Error(`Square did not return an image ID for product image ${index + 1}.`);
+    imageIdsByUrl.set(imageUrl, squareImageId);
   }
+  return imageIdsByUrl;
 }
 
 function isPresentAtLocation(tax: SquareCatalogTax, locationId: string): boolean {
@@ -348,14 +355,29 @@ export async function exportProductToSquare(product: Product, idempotencyKey: st
   await updateSquareItemTaxes(squareItemId, working.isTaxable, taxes);
   console.log(JSON.stringify({ level: "info", message: "Square item taxes updated", productId: product.id, squareItemId, taxable: working.isTaxable, taxes: working.isTaxable ? taxes.enabledTaxNames : [] }));
 
-  await uploadSquareImages(product, squareItemId, working.images, idempotencyKey);
+  const variantImageUrls = variants.map((variant) => variant.image).filter((image): image is string => Boolean(image));
+  const imageIdsByUrl = await uploadSquareImages(product, squareItemId, [...working.images, ...variantImageUrls], idempotencyKey);
+  let finalSquareVersion = item?.version ?? null;
+
+  if (working.variants.length) {
+    const imageReadyItem = await retrieveActiveSquareItem(squareItemId);
+    if (!imageReadyItem) throw new Error("Square item could not be reloaded to attach variant photos.");
+    const imagePrepared = squareObject(product, working, variants, imageReadyItem, itemTaxIds, imageIdsByUrl);
+    const imageResult = await upsertSquareItem(imagePrepared.object, `${idempotencyKey}-variant-images`);
+    const imageItem = imageResult.objects?.find((candidate) => candidate.id === squareItemId)
+      || imageResult.objects?.find((candidate) => candidate.type === "ITEM")
+      || imageResult.objects?.[0];
+    finalSquareVersion = imageItem?.version ?? imageReadyItem.version ?? finalSquareVersion;
+    await saveSquareCatalogMapping(product.id, squareItemId, finalSquareVersion, working);
+    console.log(JSON.stringify({ level: "info", message: "Square variation images updated", productId: product.id, squareItemId, assignedVariantImages: variants.filter((variant) => Boolean(variant.image)).length }));
+  }
 
   const changes = variants.filter((variant) => variant.squareVariationId).map((variant) => ({
     type: "PHYSICAL_COUNT",
     physical_count: { catalog_object_id: variant.squareVariationId, state: "IN_STOCK", location_id: taxes.locationId, quantity: String(variant.quantity), occurred_at: new Date().toISOString(), reference_id: `${product.etsyListingId}:${variant.id}` },
   }));
   if (changes.length) await squareFetch("/v2/inventory/changes/batch-create", { method: "POST", body: JSON.stringify({ idempotency_key: `${idempotencyKey}-inventory`, changes, ignore_unchanged_counts: true }) });
-  await markExported(product.id, squareItemId, item?.version ?? null, working);
+  await markExported(product.id, squareItemId, finalSquareVersion, working);
 }
 
 export async function createSquareAuthorizeUrl(): Promise<string> {

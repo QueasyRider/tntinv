@@ -237,9 +237,11 @@ td a { display: inline-flex; align-items: center; gap: 4px; color: #2472ba; }
 .preview-product span, .preview-rail p { font-size: 9px; color: var(--muted); }
 .preview-description { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
 .preview-variants { margin-top: 6px; border: 1px solid var(--line); }
-.preview-variants div { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; padding: 6px 8px; border-bottom: 1px solid #ddd; font-size: 9px; }
+.preview-variants div { display: grid; grid-template-columns: 28px 1fr auto auto; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid #ddd; font-size: 9px; }
 .preview-variants div:last-child { border-bottom: 0; }
 .preview-variants span:last-child { color: #176b4a; }
+.preview-variant-thumb { width: 25px; height: 25px; display: grid; place-items: center; border: 1px solid #aaa; border-radius: 2px; background: #ded6c4 center/cover no-repeat; color: transparent; }
+.preview-variant-thumb.empty { color: #999; }
 .total { display: flex; justify-content: space-between; padding: 11px 2px; }
 .validation { display: flex; gap: 8px; padding: 10px; border: 1px solid #eaa522; background: #fff3d7; color: #a95e00; }
 .validation div { display: flex; flex-direction: column; gap: 3px; }
@@ -250,6 +252,7 @@ td a { display: inline-flex; align-items: center; gap: 4px; color: #2472ba; }
 .mapping strong { color: var(--pink); }
 .variants-panel { margin-top: 7px; border: 1px solid var(--line); background: #faf8f1; }
 .variants-panel > header { display: flex; align-items: center; justify-content: space-between; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+.variants-panel > header small { display: block; margin-top: 3px; color: var(--muted); font-size: 9px; }
 .variant-row { display: grid; grid-template-columns: 56px 1fr 1fr 1.4fr .8fr .65fr 35px; }
 .variant-row > * { min-width: 0; height: 44px; border: 0; border-right: 1px solid #ddd; border-bottom: 1px solid #ddd; background: transparent; padding: 7px 9px; font-size: 9px; }
 .variant-row.head > * { font-weight: 800; }
@@ -257,6 +260,22 @@ td a { display: inline-flex; align-items: center; gap: 4px; color: #2472ba; }
 .variant-thumb-cell { display: grid; place-items: center; padding: 4px !important; }
 .variant-thumb { width: 34px; height: 34px; border: 1px solid #aaa; border-radius: 3px; background: #ded6c4 center/cover no-repeat; }
 .variant-thumb-empty { color: #aaa; font: 700 14px var(--mono); }
+.variant-image-button { width: 36px; height: 36px; padding: 0; border: 1px dashed #879096; border-radius: 3px; color: #347db3; background: transparent; }
+.variant-image-button.assigned { border-style: solid; }
+.variant-image-button:hover { border-color: #277fcb; box-shadow: 0 0 0 2px #277fcb22; }
+.variant-image-modal { width: min(720px, 100%); max-height: 90vh; overflow: auto; padding: 18px; color: var(--ink); background: var(--paper); border: 1px solid #000; box-shadow: 10px 10px 0 #0008; }
+.variant-image-modal > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding-bottom: 13px; border-bottom: 1px solid var(--line); }
+.variant-image-modal h2 { margin: 0; font: 27px/1 var(--display); }
+.variant-image-modal header p { margin: 5px 0 0; color: var(--muted); font-size: 10px; }
+.variant-image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(105px, 1fr)); gap: 10px; padding: 16px 0; }
+.variant-image-grid button { position: relative; min-width: 0; padding: 5px; border: 1px solid var(--line); border-radius: 3px; background: #faf8f1; text-align: left; }
+.variant-image-grid button:hover, .variant-image-grid button.selected { border-color: #277fcb; box-shadow: 0 0 0 2px #277fcb22; }
+.variant-image-grid button > span { display: block; width: 100%; aspect-ratio: 1; border: 1px solid #ccc; background: #ded6c4 center/cover no-repeat; }
+.variant-image-grid button small { display: block; padding: 6px 2px 1px; font-size: 9px; font-weight: 800; }
+.variant-image-grid button i { position: absolute; top: 9px; right: 9px; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; color: white; background: #277fcb; }
+.variant-image-empty { min-height: 190px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; color: var(--muted); text-align: center; }
+.variant-image-empty span { font-size: 10px; }
+.variant-image-modal > footer { display: flex; justify-content: flex-end; gap: 8px; padding-top: 13px; border-top: 1px solid var(--line); }
 .diff-view, .product-history { margin-top: 12px; border: 1px solid var(--line); background: #faf8f1; }
 .diff-heading { display: grid; grid-template-columns: 1fr 40px 1fr; padding: 18px; background: var(--ink); color: white; }
 .diff-heading > div:last-child { text-align: right; }
