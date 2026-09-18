@@ -1,5 +1,5 @@
 import { apiError } from "@/lib/http";
-import { exportProductToSquare, listSquareCategories } from "@/lib/square";
+import { exportProductToSquare, listSquareCategories, listSquareTaxes } from "@/lib/square";
 import { addActivity, finishSyncRun, getAppState, getProduct, getSettings, markExported, markExportError, startSyncRun } from "@/lib/repository";
 
 export async function POST(request: Request) {
@@ -9,7 +9,10 @@ export async function POST(request: Request) {
   const settings = await getSettings();
   const errors: string[] = [];
   let success = 0;
-  let squareCategories: ReturnType<typeof listSquareCategories> | null = null;
+  let squareCatalogData: Promise<[
+    Awaited<ReturnType<typeof listSquareCategories>>,
+    Awaited<ReturnType<typeof listSquareTaxes>>,
+  ]> | null = null;
   for (const [index, id] of body.ids.entries()) {
     const product = await getProduct(id);
     if (!product) { errors.push(`Product ${id} no longer exists.`); continue; }
@@ -20,8 +23,9 @@ export async function POST(request: Request) {
         else copy.variants = copy.variants.map((variant, variantIndex) => ({ ...variant, squareVariationId: variant.squareVariationId || `DEMO-VAR-${product.etsyListingId}-${variantIndex + 1}` }));
         await markExported(product.id, product.squareItemId || `DEMO-SQ-${product.etsyListingId}`, Date.now(), copy);
       } else {
-        squareCategories ||= listSquareCategories();
-        await exportProductToSquare(product, `${run.id}-${index}`, await squareCategories!);
+        squareCatalogData ||= Promise.all([listSquareCategories(), listSquareTaxes()]);
+        const [squareCategories, squareTaxes] = await squareCatalogData;
+        await exportProductToSquare(product, `${run.id}-${index}`, squareCategories, squareTaxes);
       }
       success++;
     } catch (error) {

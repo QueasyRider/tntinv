@@ -39,6 +39,25 @@ interface SquareCatalogItem {
   };
 }
 
+interface SquareCatalogTax {
+  id: string;
+  is_deleted?: boolean;
+  present_at_all_locations?: boolean;
+  present_at_location_ids?: string[];
+  absent_at_location_ids?: string[];
+  tax_data?: {
+    name?: string;
+    enabled?: boolean;
+  };
+}
+
+export interface SquareTaxSelection {
+  allTaxIds: string[];
+  enabledTaxIds: string[];
+  enabledTaxNames: string[];
+  locationId: string;
+}
+
 class SquareRequestError extends Error {
   constructor(message: string, readonly status: number, readonly errors: SquareErrorDetail[]) {
     super(message);
@@ -131,7 +150,7 @@ function sourceVariants(copy: ProductCopy): Variant[] {
   return copy.variants.length ? copy.variants : [{ id: "regular", name: "Regular", optionName: "Option", optionValue: "Regular", sku: copy.sku, priceCents: copy.priceCents, quantity: copy.quantity, squareVariationId: null }];
 }
 
-function squareObject(product: Product, copy: ProductCopy, variants: Variant[], existingItem: SquareCatalogItem | null) {
+function squareObject(product: Product, copy: ProductCopy, variants: Variant[], existingItem: SquareCatalogItem | null, taxIds: string[]) {
   const itemId = existingItem?.id || `#item-${product.id}`;
   const availableVariations = (existingItem?.item_data?.variations || []).filter((variation) => !variation.is_deleted);
   const usedVariationIds = new Set<string>();
@@ -173,6 +192,7 @@ function squareObject(product: Product, copy: ProductCopy, variants: Variant[], 
       ...(copy.squareCategoryId ? { categories: [{ id: copy.squareCategoryId }] } : {}),
       ...(copy.squareCategoryId ? { reporting_category: { id: copy.squareCategoryId } } : {}),
       is_taxable: copy.isTaxable,
+      tax_ids: copy.isTaxable ? taxIds : [],
       variations: variationObjects,
     },
   };
@@ -216,6 +236,51 @@ async function uploadSquareImages(product: Product, itemId: string, imageUrls: s
   }
 }
 
+function isPresentAtLocation(tax: SquareCatalogTax, locationId: string): boolean {
+  if (tax.present_at_all_locations !== false) return !(tax.absent_at_location_ids || []).includes(locationId);
+  return (tax.present_at_location_ids || []).includes(locationId);
+}
+
+export async function listSquareTaxes(): Promise<SquareTaxSelection> {
+  const settings = await getSettings();
+  const connection = await getConnection("square");
+  const locationId = settings.squareLocationId || connection.config?.locationId;
+  if (!locationId) throw new Error("Choose a Square location before exporting.");
+
+  const taxes: SquareCatalogTax[] = [];
+  let cursor: string | undefined;
+  do {
+    const params = new URLSearchParams({ types: "TAX" });
+    if (cursor) params.set("cursor", cursor);
+    const result = await squareFetch<{ objects?: SquareCatalogTax[]; cursor?: string }>(`/v2/catalog/list?${params.toString()}`);
+    taxes.push(...(result.objects || []).filter((tax) => !tax.is_deleted));
+    cursor = result.cursor || undefined;
+  } while (cursor);
+
+  const enabledTaxes = taxes.filter((tax) => tax.tax_data?.enabled === true && isPresentAtLocation(tax, locationId));
+  return {
+    allTaxIds: taxes.map((tax) => tax.id),
+    enabledTaxIds: enabledTaxes.map((tax) => tax.id),
+    enabledTaxNames: enabledTaxes.map((tax) => tax.tax_data?.name?.trim() || tax.id),
+    locationId,
+  };
+}
+
+async function updateSquareItemTaxes(itemId: string, isTaxable: boolean, taxes: SquareTaxSelection): Promise<void> {
+  const taxesToEnable = isTaxable ? taxes.enabledTaxIds : [];
+  const enabledSet = new Set(taxesToEnable);
+  const taxesToDisable = taxes.allTaxIds.filter((taxId) => !enabledSet.has(taxId));
+  if (!taxesToEnable.length && !taxesToDisable.length) return;
+  await squareFetch("/v2/catalog/update-item-taxes", {
+    method: "POST",
+    body: JSON.stringify({
+      item_ids: [itemId],
+      ...(taxesToEnable.length ? { taxes_to_enable: taxesToEnable } : {}),
+      ...(taxesToDisable.length ? { taxes_to_disable: taxesToDisable } : {}),
+    }),
+  });
+}
+
 export async function listSquareCategories(): Promise<SquareCategorySummary[]> {
   const categories: SquareCategorySummary[] = [];
   let cursor: string | undefined;
@@ -235,17 +300,21 @@ export async function listSquareCategories(): Promise<SquareCategorySummary[]> {
   return categories;
 }
 
-export async function exportProductToSquare(product: Product, idempotencyKey: string, categories: SquareCategorySummary[]): Promise<void> {
+export async function exportProductToSquare(product: Product, idempotencyKey: string, categories: SquareCategorySummary[], taxes: SquareTaxSelection): Promise<void> {
   const working = normalizeProductText(structuredClone(product.working));
   const errors = validateProduct(working).filter((issue) => issue.severity === "error");
   if (errors.length) throw new Error(errors.map((issue) => issue.message).join(" "));
+  if (working.isTaxable && !taxes.enabledTaxIds.length) {
+    throw new Error("This product is marked taxable, but no enabled Square tax is available at the selected location. Enable a tax in Square or mark the product non-taxable.");
+  }
   working.squareCategoryId = resolveExistingSquareCategory(working.category, working.squareCategoryId, categories);
   const variants = sourceVariants(working);
+  const itemTaxIds = working.isTaxable ? taxes.enabledTaxIds : [];
   let existingItem = product.squareItemId ? await retrieveActiveSquareItem(product.squareItemId) : null;
   if (product.squareItemId && !existingItem) {
     console.warn(JSON.stringify({ level: "warning", message: "Stale Square item mapping detected; creating a new catalog item", productId: product.id, etsyListingId: product.etsyListingId, squareItemId: product.squareItemId }));
   }
-  let prepared = squareObject(product, working, variants, existingItem);
+  let prepared = squareObject(product, working, variants, existingItem, itemTaxIds);
   let result: Awaited<ReturnType<typeof upsertSquareItem>>;
   try {
     result = await upsertSquareItem(prepared.object, idempotencyKey);
@@ -253,7 +322,7 @@ export async function exportProductToSquare(product: Product, idempotencyKey: st
     if (!existingItem || !isMissingCatalogObject(error)) throw error;
     console.warn(JSON.stringify({ level: "warning", message: "Square catalog object disappeared during export; retrying as a new item", productId: product.id, etsyListingId: product.etsyListingId, squareItemId: existingItem.id }));
     existingItem = null;
-    prepared = squareObject(product, working, variants, null);
+    prepared = squareObject(product, working, variants, null, itemTaxIds);
     result = await upsertSquareItem(prepared.object, `${idempotencyKey}-recreate`);
   }
   const { object, variationObjectIds } = prepared;
@@ -276,15 +345,14 @@ export async function exportProductToSquare(product: Product, idempotencyKey: st
   await saveSquareCatalogMapping(product.id, squareItemId, item?.version ?? null, working);
   console.log(JSON.stringify({ level: "info", message: "Square catalog mapping saved", productId: product.id, etsyListingId: product.etsyListingId, squareItemId }));
 
+  await updateSquareItemTaxes(squareItemId, working.isTaxable, taxes);
+  console.log(JSON.stringify({ level: "info", message: "Square item taxes updated", productId: product.id, squareItemId, taxable: working.isTaxable, taxes: working.isTaxable ? taxes.enabledTaxNames : [] }));
+
   await uploadSquareImages(product, squareItemId, working.images, idempotencyKey);
 
-  const settings = await getSettings();
-  const connection = await getConnection("square");
-  const locationId = settings.squareLocationId || connection.config?.locationId;
-  if (!locationId) throw new Error("Choose a Square location before setting inventory.");
   const changes = variants.filter((variant) => variant.squareVariationId).map((variant) => ({
     type: "PHYSICAL_COUNT",
-    physical_count: { catalog_object_id: variant.squareVariationId, state: "IN_STOCK", location_id: locationId, quantity: String(variant.quantity), occurred_at: new Date().toISOString(), reference_id: `${product.etsyListingId}:${variant.id}` },
+    physical_count: { catalog_object_id: variant.squareVariationId, state: "IN_STOCK", location_id: taxes.locationId, quantity: String(variant.quantity), occurred_at: new Date().toISOString(), reference_id: `${product.etsyListingId}:${variant.id}` },
   }));
   if (changes.length) await squareFetch("/v2/inventory/changes/batch-create", { method: "POST", body: JSON.stringify({ idempotency_key: `${idempotencyKey}-inventory`, changes, ignore_unchanged_counts: true }) });
   await markExported(product.id, squareItemId, item?.version ?? null, working);
