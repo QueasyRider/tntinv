@@ -186,6 +186,36 @@ async function upsertSquareItem(object: ReturnType<typeof squareObject>["object"
   });
 }
 
+async function uploadSquareImages(product: Product, itemId: string, imageUrls: string[], idempotencyKey: string): Promise<void> {
+  const uniqueImageUrls = [...new Set(imageUrls.map((url) => url.trim()).filter(Boolean))];
+  for (const [index, imageUrl] of uniqueImageUrls.entries()) {
+    let imageResponse: Response;
+    try {
+      imageResponse = await fetch(imageUrl, { cache: "no-store" });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(`Could not download Etsy image ${index + 1} of ${uniqueImageUrls.length}: ${detail}`);
+    }
+    if (!imageResponse.ok) {
+      throw new Error(`Could not download Etsy image ${index + 1} of ${uniqueImageUrls.length} (${imageResponse.status}).`);
+    }
+
+    const form = new FormData();
+    form.set("request", JSON.stringify({
+      idempotency_key: `${idempotencyKey}-image-${index + 1}`,
+      object_id: itemId,
+      is_primary: index === 0,
+      image: {
+        type: "IMAGE",
+        id: `#image-${product.id}-${index + 1}`,
+        image_data: { name: `${product.working.title} — Etsy import ${index + 1}` },
+      },
+    }));
+    form.set("image_file", await imageResponse.blob(), `etsy-product-${index + 1}.jpg`);
+    await squareFetch("/v2/catalog/images", { method: "POST", body: form });
+  }
+}
+
 export async function listSquareCategories(): Promise<SquareCategorySummary[]> {
   const categories: SquareCategorySummary[] = [];
   let cursor: string | undefined;
@@ -246,15 +276,7 @@ export async function exportProductToSquare(product: Product, idempotencyKey: st
   await saveSquareCatalogMapping(product.id, squareItemId, item?.version ?? null, working);
   console.log(JSON.stringify({ level: "info", message: "Square catalog mapping saved", productId: product.id, etsyListingId: product.etsyListingId, squareItemId }));
 
-  if (working.images[0]) {
-    const imageResponse = await fetch(working.images[0]);
-    if (imageResponse.ok) {
-      const form = new FormData();
-      form.set("request", JSON.stringify({ idempotency_key: `${idempotencyKey}-image`, object_id: squareItemId, image: { type: "IMAGE", id: `#image-${product.id}`, image_data: { name: `${working.title} — Etsy import` } } }));
-      form.set("image_file", await imageResponse.blob(), "etsy-product.jpg");
-      await squareFetch("/v2/catalog/images", { method: "POST", body: form });
-    }
-  }
+  await uploadSquareImages(product, squareItemId, working.images, idempotencyKey);
 
   const settings = await getSettings();
   const connection = await getConnection("square");
