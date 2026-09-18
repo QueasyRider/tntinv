@@ -240,11 +240,11 @@ td a { display: inline-flex; align-items: center; gap: 4px; color: #2472ba; }
 .preview-product strong { font-size: 16px; }
 .preview-product span, .preview-rail p { font-size: 9px; color: var(--muted); }
 .preview-description { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
-.preview-variants { margin-top: 6px; border: 1px solid var(--line); }
-.preview-variants div { display: grid; grid-template-columns: 28px 1fr auto auto; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid #ddd; font-size: 9px; }
+.preview-variants { display: grid; grid-auto-rows: 38px; align-content: start; margin-top: 6px; border: 1px solid var(--line); }
+.preview-variants div { height: 38px; min-height: 0; display: grid; grid-template-columns: 28px 1fr auto auto; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid #ddd; font-size: 9px; }
 .preview-variants div:last-child { border-bottom: 0; }
 .preview-variants span:last-child { color: #176b4a; }
-.preview-variant-thumb { width: 25px; height: 25px; display: grid; place-items: center; border: 1px solid #aaa; border-radius: 2px; background: #ded6c4 center/cover no-repeat; color: transparent; }
+.preview-variant-thumb { width: 25px; height: 25px; min-height: 25px; max-height: 25px; align-self: center; display: grid; place-items: center; overflow: hidden; border: 1px solid #aaa; border-radius: 2px; background: #ded6c4 center/cover no-repeat; color: transparent; }
 .preview-variant-thumb.empty { color: #999; }
 .total { display: flex; justify-content: space-between; padding: 11px 2px; }
 .validation { display: flex; gap: 8px; padding: 10px; border: 1px solid #eaa522; background: #fff3d7; color: #a95e00; }
