@@ -29,9 +29,9 @@ function SortIndicator({ active, direction }: { active: boolean; direction: Sort
   return direction === "ascending" ? <ChevronUp size={14} /> : <ChevronDown size={14} />;
 }
 
-export function Dashboard({ state, selected, setSelected, onOpen, onImport, onExport, onBulk, busy, inventoryOnly = false }: {
+export function Dashboard({ state, selected, setSelected, onOpen, onImport, onExport, onBulk, onHistory, busy, inventoryOnly = false }: {
   state: AppState; selected: Set<string>; setSelected: (value: Set<string>) => void; onOpen: (product: Product) => void;
-  onImport: () => void; onExport: (ids: string[]) => void; onBulk: () => void; busy: string | null; inventoryOnly?: boolean;
+  onImport: () => void; onExport: (ids: string[]) => void; onBulk: () => void; onHistory: () => void; busy: string | null; inventoryOnly?: boolean;
 }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | ProductStatus>("all");
@@ -78,5 +78,5 @@ export function Dashboard({ state, selected, setSelected, onOpen, onImport, onEx
       </tr>)}</tbody></table>{!products.length && <div className="empty"><Search size={28} /><strong>No products match</strong><span>Try a different search or filter.</span></div>}</div>
       <footer className="table-footer"><span>Showing {firstVisible}–{lastVisible} of {products.length} product{products.length === 1 ? "" : "s"}</span><div><button onClick={() => setPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1} aria-label="Previous inventory page"><ChevronLeft size={15} /></button>{Array.from({ length: pageCount }, (_, index) => index + 1).map((pageNumber) => <button key={pageNumber} className={pageNumber === currentPage ? "active" : ""} onClick={() => setPage(pageNumber)} aria-label={`Inventory page ${pageNumber}`} aria-current={pageNumber === currentPage ? "page" : undefined}>{pageNumber}</button>)}<button onClick={() => setPage(Math.min(pageCount, currentPage + 1))} disabled={currentPage === pageCount} aria-label="Next inventory page"><ChevronRight size={15} /></button></div></footer>
     </section>
-  </main>{!inventoryOnly && <aside className="activity-rail"><h2>RECENT ACTIVITY</h2>{state.activities.slice(0, 8).map((activity) => <ActivityRow key={activity.id} activity={activity} />)}<button className="history-link">View all history <ArrowUpRight size={15} /></button><div className="rail-stamp">THRIFT<br />HARDER ★</div></aside>}</div>;
+  </main>{!inventoryOnly && <aside className="activity-rail"><h2>RECENT ACTIVITY</h2>{state.activities.slice(0, 8).map((activity) => <ActivityRow key={activity.id} activity={activity} />)}<button className="history-link" onClick={onHistory}>View all history <ArrowUpRight size={15} /></button><div className="rail-stamp">THRIFT<br />HARDER ★</div></aside>}</div>;
 }

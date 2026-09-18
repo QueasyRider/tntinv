@@ -151,7 +151,7 @@ export function AppShell({ initialState }: { initialState: AppState }) {
       : view === "history" ? <History state={state} />
       : view === "settings" ? <Settings state={state} onSave={saveSettings} onTest={testConnection} busy={busy} />
       : view === "bulk" ? <BulkEdit products={state.products} initialSelected={selected} onApply={applyBulk} busy={busy === "bulk"} />
-      : <Dashboard state={state} selected={selected} setSelected={setSelected} onOpen={openProduct} onImport={runImport} onExport={runExport} onBulk={() => setBulkModal(true)} busy={busy} inventoryOnly={view === "inventory"} />}
+      : <Dashboard state={state} selected={selected} setSelected={setSelected} onOpen={openProduct} onImport={runImport} onExport={runExport} onBulk={() => setBulkModal(true)} onHistory={() => changeView("history")} busy={busy} inventoryOnly={view === "inventory"} />}
     <footer className="legal-footer">‘Etsy’ is a trademark of Etsy, Inc. This Application uses Etsy&apos;s API, but is not endorsed or certified by Etsy.</footer>
   </div>
   {bulkModal && <BulkEdit products={state.products} initialSelected={selected} onApply={applyBulk} onClose={() => setBulkModal(false)} modal busy={busy === "bulk"} />}
