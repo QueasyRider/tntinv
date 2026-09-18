@@ -69,7 +69,7 @@ function mergeVariant(etsyListingId: string, previousOriginal: Variant, working:
     sku: mergeSku(etsyListingId, previousOriginal.sku, working.sku, imported.sku),
     priceCents: mergeValue(previousOriginal.priceCents, working.priceCents, imported.priceCents),
     quantity: mergeValue(previousOriginal.quantity, working.quantity, imported.quantity),
-    image: mergeValue(previousOriginal.image, working.image, imported.image),
+    image: imported.image,
     squareVariationId: working.squareVariationId,
   };
 }
@@ -118,7 +118,7 @@ export function mergeImportedProductCopy(
     tags: mergeValue(previousOriginal.tags, working.tags, imported.tags),
     quantity: mergeValue(previousOriginal.quantity, working.quantity, imported.quantity),
     state: mergeValue(previousOriginal.state, working.state, imported.state),
-    images: mergeValue(previousOriginal.images, working.images, imported.images),
+    images: imported.images,
     variants: mergeVariants(etsyListingId, previousOriginal.variants, working.variants, imported.variants),
   };
 }

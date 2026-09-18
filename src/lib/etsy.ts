@@ -23,7 +23,6 @@ interface EtsyListing {
   taxonomy_id?: number;
   taxonomy_path?: string[];
   shop_section_id?: number | null;
-  images?: EtsyListingImageRef[];
 }
 
 interface EtsyShopSection {
@@ -176,22 +175,14 @@ async function getListingInventories(listings: EtsyListing[]): Promise<Map<numbe
   return inventories;
 }
 
-async function getListingImages(listing: EtsyListing): Promise<EtsyListingImageRef[]> {
-  let listingImages = listing.images || [];
-  if (!listingImages.length) {
-    try {
-      const imageResponse = await etsyFetch<{ results?: EtsyListingImageRef[] }>(`/listings/${listing.listing_id}/images`);
-      listingImages = imageResponse.results || [];
-    } catch (error) {
-      console.warn(JSON.stringify({
-        level: "warning",
-        message: "Etsy image import failed",
-        listingId: listing.listing_id,
-        error: error instanceof Error ? error.message : String(error),
-      }));
-    }
+async function getListingImages(listingId: number): Promise<EtsyListingImageRef[]> {
+  try {
+    const imageResponse = await etsyFetch<{ results?: EtsyListingImageRef[] }>(`/listings/${listingId}/images`);
+    return [...(imageResponse.results || [])].sort((left, right) => (left.rank ?? Number.MAX_SAFE_INTEGER) - (right.rank ?? Number.MAX_SAFE_INTEGER));
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Could not refresh images for Etsy listing ${listingId}: ${detail}`);
   }
-  return listingImages;
 }
 
 async function getVariationImageLookup(shopId: string, listingId: number, listingImages: EtsyListingImageRef[]): Promise<Map<string, string>> {
@@ -217,7 +208,7 @@ async function listingToProduct(
   shopId: string,
 ): Promise<ProductCopy> {
   const products = inventory?.products || [];
-  const listingImages = await getListingImages(listing);
+  const listingImages = await getListingImages(listing.listing_id);
   const hasVariants = products.some((product) => product.property_values?.some((property) => property.values?.length || property.value_ids?.length));
   const variationImageLookup = hasVariants
     ? await getVariationImageLookup(shopId, listing.listing_id, listingImages)
@@ -271,7 +262,7 @@ export async function importFromEtsy(options: EtsyImportOptions = {}): Promise<E
   ]);
   const offset = Math.max(0, Math.floor(options.offset || 0));
   const limit = Math.min(100, Math.max(1, Math.floor(options.limit || 12)));
-  const page = await etsyFetch<{ count: number; results: EtsyListing[] }>(`/shops/${shopId}/listings?state=active&limit=${limit}&offset=${offset}&includes=Images`);
+  const page = await etsyFetch<{ count: number; results: EtsyListing[] }>(`/shops/${shopId}/listings?state=active&limit=${limit}&offset=${offset}`);
   const listings = page.results || [];
   const total = Math.max(0, page.count || 0);
   const nextOffset = offset + listings.length;

@@ -5,6 +5,7 @@ export interface EtsyPropertyValueRef {
 
 export interface EtsyListingImageRef {
   listing_image_id?: number;
+  rank?: number;
   url_fullxfull?: string;
   url_570xN?: string;
 }
