@@ -62,6 +62,7 @@ a { color: inherit; }
 .profile small { color: var(--muted); font-size: 10px; }
 
 .dashboard-grid { display: grid; grid-template-columns: minmax(0, 1fr) 210px; min-height: calc(100vh - 54px); }
+.dashboard-grid.inventory-wide { grid-template-columns: minmax(0, 1fr); }
 .dashboard-main { padding: 20px 22px 28px; min-width: 0; }
 .page-head { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 17px; }
 .page-head > div:first-child { display: flex; align-items: flex-end; gap: 20px; }

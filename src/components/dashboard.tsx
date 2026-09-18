@@ -65,7 +65,7 @@ export function Dashboard({ state, selected, setSelected, onOpen, onImport, onEx
   const toggle = (id: string) => { const next = new Set(selected); if (next.has(id)) next.delete(id); else next.add(id); setSelected(next); };
   const allSelected = visibleProducts.length > 0 && visibleProducts.every((product) => selected.has(product.id));
 
-  return <div className="dashboard-grid"><main className="dashboard-main">
+  return <div className={`dashboard-grid ${inventoryOnly ? "inventory-wide" : ""}`}><main className="dashboard-main">
     <section className="page-head"><div><h1>{inventoryOnly ? "INVENTORY" : "INVENTORY TRANSFER"}</h1><p>Same good stuff. New homes.</p></div><div className="head-actions"><button className="button lime" onClick={onImport} disabled={Boolean(busy)}><Download size={18} />{busy === "import" ? "Importing…" : "Import from Etsy"}</button><button className="button dark" onClick={() => onExport([...selected])} disabled={!selected.size || Boolean(busy)}><Upload size={18} />{busy === "export" ? "Exporting…" : "Export selected"}</button></div></section>
     {!inventoryOnly && <section className="metrics" aria-label="Inventory metrics"><Metric label="Imported" value={state.metrics.imported} icon={Box} /><Metric label="Ready" value={state.metrics.ready} icon={PackageCheck} tone="green" /><Metric label="Exported" value={state.metrics.exported} icon={SquareArrowOutUpRight} tone="blue" /><Metric label="Errors" value={state.metrics.errors} icon={AlertTriangle} tone="pink" /></section>}
     <section className="table-workspace">
