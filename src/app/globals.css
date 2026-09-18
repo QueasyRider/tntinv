@@ -104,6 +104,7 @@ a { color: inherit; }
 .selection-bar .clear { margin-left: auto; }
 .table-scroll { overflow-x: auto; }
 table { width: 100%; min-width: 920px; border-collapse: collapse; table-layout: auto; }
+.dashboard-grid:not(.inventory-wide) table { min-width: 860px; }
 th { height: 34px; padding: 5px 9px; text-align: left; border-bottom: 1px solid var(--line); font-size: 10px; white-space: nowrap; }
 .sort-header { display: inline-flex; align-items: center; gap: 5px; border: 0; padding: 4px 0; background: transparent; color: inherit; font-size: inherit; font-weight: 800; }
 .sort-header:hover, .sort-header.active { color: #2472ba; }
@@ -113,9 +114,11 @@ tbody tr.selected { box-shadow: inset 3px 0 #4489e6; }
 .check-cell { width: 34px; text-align: center; }
 input[type="checkbox"] { width: 15px; height: 15px; accent-color: #327ed2; }
 .product-cell { width: 100%; min-width: 210px; border: 0; background: transparent; display: flex; align-items: center; gap: 10px; text-align: left; padding: 0; }
+.dashboard-grid:not(.inventory-wide) .product-cell { min-width: 170px; max-width: 220px; }
 .thumb, .mini-thumb { width: 44px; height: 44px; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid #aaa; border-radius: 3px; background: #ded6c4 center/cover no-repeat; font: 20px var(--display); overflow: hidden; }
 .product-cell > span:last-child { min-width: 0; display: flex; flex-direction: column; }
 .product-cell strong { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.dashboard-grid:not(.inventory-wide) .product-cell strong { max-width: 166px; }
 .product-cell small, .date small { display: block; color: var(--muted); margin-top: 3px; }
 td a { display: inline-flex; align-items: center; gap: 4px; color: #2472ba; }
 .mono { font-family: var(--mono); font-size: 10px; }
