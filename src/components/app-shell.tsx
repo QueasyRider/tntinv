@@ -172,7 +172,7 @@ export function AppShell({ initialState }: { initialState: AppState }) {
       : view === "imports" ? <ImportChangeReview state={state} onOpen={openProduct} />
       : view === "bulk" ? <BulkEdit products={state.products} initialSelected={selected} onApply={applyBulk} busy={busy === "bulk"} />
       : <Dashboard state={state} selected={selected} setSelected={setSelected} onOpen={openProduct} onImport={runImport} onExport={runExport} onBulk={() => setBulkModal(true)} onHistory={() => changeView("history")} onPreflight={() => changeView("preflight")} busy={busy} inventoryOnly={view === "inventory"} />}
-    <footer className="legal-footer">‘Etsy’ is a trademark of Etsy, Inc. This Application uses Etsy&apos;s API, but is not endorsed or certified by Etsy.</footer>
+    <footer className="legal-footer"><span className="footer-version">V1.0</span><span>‘Etsy’ is a trademark of Etsy, Inc. This Application uses Etsy&apos;s API, but is not endorsed or certified by Etsy.</span></footer>
   </div>
   {bulkModal && <BulkEdit products={state.products} initialSelected={selected} onApply={applyBulk} onClose={() => setBulkModal(false)} modal busy={busy === "bulk"} />}
   {toast && <div className={`toast ${toast.tone}`} role="status">{toast.tone === "success" ? <CheckCircle2 size={19} /> : <AlertTriangle size={19} />}<span>{toast.message}</span><button onClick={() => setToast(null)} aria-label="Dismiss message"><X size={17} /></button></div>}
