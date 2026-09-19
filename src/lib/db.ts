@@ -54,6 +54,17 @@ async function initializeDatabase(): Promise<void> {
   await sql`ALTER TABLE product_skus DROP CONSTRAINT IF EXISTS product_skus_pkey`;
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS product_skus_sku_product_idx ON product_skus(sku_key, product_id)`;
   await sql`CREATE INDEX IF NOT EXISTS product_skus_product_id_idx ON product_skus(product_id)`;
+  await sql`
+    CREATE TABLE IF NOT EXISTS product_images (
+      id TEXT PRIMARY KEY,
+      product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      mime_type TEXT NOT NULL,
+      file_name TEXT NOT NULL,
+      data_base64 TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS product_images_product_id_idx ON product_images(product_id)`;
   await sql`CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`;
   await sql`
     CREATE TABLE IF NOT EXISTS activities (

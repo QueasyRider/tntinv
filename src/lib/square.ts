@@ -1,6 +1,7 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
-import { deleteOauthState, getConnection, getOauthState, getProductSkuConflictError, getSettings, markExported, saveConnectionToken, saveOauthState, saveSquareCatalogMapping, updateConnectionTest, validateProduct } from "./repository";
+import { deleteOauthState, getConnection, getOauthState, getProductImage, getProductSkuConflictError, getSettings, markExported, saveConnectionToken, saveOauthState, saveSquareCatalogMapping, updateConnectionTest, validateProduct } from "./repository";
+import { storedProductImageId } from "./product-images";
 import type { ProviderToken, SquareConfig } from "./repository";
 import { resolveExistingSquareCategory } from "./square-categories";
 import type { SquareCategorySummary } from "./square-categories";
@@ -212,15 +213,26 @@ async function uploadSquareImages(product: Product, itemId: string, imageUrls: s
   const uniqueImageUrls = [...new Set(imageUrls.map((url) => url.trim()).filter(Boolean))];
   const imageIdsByUrl = new Map<string, string>();
   for (const [index, imageUrl] of uniqueImageUrls.entries()) {
-    let imageResponse: Response;
-    try {
-      imageResponse = await fetch(imageUrl, { cache: "no-store" });
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      throw new Error(`Could not download Etsy image ${index + 1} of ${uniqueImageUrls.length}: ${detail}`);
-    }
-    if (!imageResponse.ok) {
-      throw new Error(`Could not download Etsy image ${index + 1} of ${uniqueImageUrls.length} (${imageResponse.status}).`);
+    const storedImageId = storedProductImageId(imageUrl);
+    let imageBlob: Blob;
+    let imageFileName = `product-${index + 1}.jpg`;
+    if (storedImageId) {
+      const storedImage = await getProductImage(storedImageId);
+      if (!storedImage) throw new Error(`Added product image ${index + 1} could not be found. Remove it and add the photo again.`);
+      imageBlob = new Blob([Buffer.from(storedImage.dataBase64, "base64")], { type: storedImage.mimeType });
+      imageFileName = storedImage.fileName;
+    } else {
+      let imageResponse: Response;
+      try {
+        imageResponse = await fetch(imageUrl, { cache: "no-store" });
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new Error(`Could not download product image ${index + 1} of ${uniqueImageUrls.length}: ${detail}`);
+      }
+      if (!imageResponse.ok) {
+        throw new Error(`Could not download product image ${index + 1} of ${uniqueImageUrls.length} (${imageResponse.status}).`);
+      }
+      imageBlob = await imageResponse.blob();
     }
 
     const form = new FormData();
@@ -231,10 +243,10 @@ async function uploadSquareImages(product: Product, itemId: string, imageUrls: s
       image: {
         type: "IMAGE",
         id: `#image-${product.id}-${index + 1}`,
-        image_data: { name: `${product.working.title} — Etsy import ${index + 1}` },
+        image_data: { name: `${product.working.title} — Product image ${index + 1}` },
       },
     }));
-    form.set("image_file", await imageResponse.blob(), `etsy-product-${index + 1}.jpg`);
+    form.set("image_file", imageBlob, imageFileName);
     const result = await squareFetch<{ image?: { id?: string } }>("/v2/catalog/images", { method: "POST", body: form });
     const squareImageId = result.image?.id;
     if (!squareImageId) throw new Error(`Square did not return an image ID for product image ${index + 1}.`);

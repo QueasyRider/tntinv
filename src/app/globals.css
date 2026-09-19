@@ -225,12 +225,15 @@ td a { display: inline-flex; align-items: center; gap: 4px; color: #2472ba; }
 .tax-toggle-copy strong { font-size: 10px; }
 .tax-toggle-copy small { color: var(--muted); font-size: 9px; }
 .tax-toggle > b { font-size: 9px; color: #176b4a; }
-.images-field > div { display: flex; gap: 6px; }
+.images-field > div { display: flex; flex-wrap: wrap; gap: 6px; }
 .editable-image, .add-image { width: 52px; height: 52px; position: relative; display: grid; place-items: center; border: 1px dashed #879096; background: #ddd center/cover; border-radius: 3px; }
 .editable-image > svg { position: absolute; left: 2px; bottom: 2px; padding: 2px; background: white; }
 .editable-image button { position: absolute; right: 1px; bottom: 1px; width: 18px; height: 18px; border: 0; background: white; display: grid; place-items: center; }
 .add-image { color: #347db3; background: transparent; display: flex; flex-direction: column; gap: 2px; }
 .add-image small { font-size: 7px; }
+.add-image:disabled { cursor: wait; opacity: .55; }
+.photo-upload-message { display: block; margin-top: 5px; color: #176b4a; font-size: 9px; }
+.photo-upload-message.error { color: #a11a4c; }
 .preview-rail { background: #f8f7f3; }
 .preview-rail > header { border-bottom: 1px solid var(--line); padding-bottom: 9px; }
 .preview-product { display: flex; gap: 10px; }

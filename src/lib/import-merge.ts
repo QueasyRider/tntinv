@@ -1,4 +1,5 @@
 import type { ProductCopy, Variant } from "./types";
+import { storedProductImageId } from "./product-images";
 
 const normalizeSku = (sku: string): string => sku.trim().toUpperCase();
 
@@ -56,7 +57,8 @@ function findVariant(variants: Variant[], target: Variant): Variant | undefined 
 function retainSquareVariationMapping(imported: Variant, working: Variant[]): Variant {
   const mappedVariant = findVariant(working, imported)
     || working.find((variant) => normalizeSku(variant.sku) === normalizeSku(imported.sku));
-  return { ...imported, squareVariationId: mappedVariant?.squareVariationId };
+  const storedImage = mappedVariant?.image && storedProductImageId(mappedVariant.image) ? mappedVariant.image : undefined;
+  return { ...imported, image: storedImage || imported.image, squareVariationId: mappedVariant?.squareVariationId };
 }
 
 function mergeVariant(etsyListingId: string, previousOriginal: Variant, working: Variant, imported: Variant): Variant {
@@ -69,7 +71,9 @@ function mergeVariant(etsyListingId: string, previousOriginal: Variant, working:
     sku: mergeSku(etsyListingId, previousOriginal.sku, working.sku, imported.sku),
     priceCents: mergeValue(previousOriginal.priceCents, working.priceCents, imported.priceCents),
     quantity: mergeValue(previousOriginal.quantity, working.quantity, imported.quantity),
-    image: mergeValue(previousOriginal.image, working.image, imported.image),
+    image: working.image && storedProductImageId(working.image)
+      ? working.image
+      : mergeValue(previousOriginal.image, working.image, imported.image),
     squareVariationId: working.squareVariationId,
   };
 }
@@ -89,12 +93,22 @@ function mergeVariants(etsyListingId: string, previousOriginal: Variant[], worki
 }
 
 export function rebaseImportedProductCopy(imported: ProductCopy, working: ProductCopy): ProductCopy {
+  const images = mergeImportedImages(imported.images, working.images);
   return {
     ...imported,
+    images,
     squareCategoryId: sameValue(imported.category, working.category) ? working.squareCategoryId : undefined,
     isTaxable: working.isTaxable,
     variants: imported.variants.map((variant) => retainSquareVariationMapping(variant, working.variants)),
   };
+}
+
+function mergeImportedImages(imported: string[], working: string[]): string[] {
+  const images = [...imported];
+  for (const image of working) {
+    if (storedProductImageId(image) && !images.includes(image)) images.push(image);
+  }
+  return images;
 }
 
 export function mergeImportedProductCopy(
@@ -105,7 +119,8 @@ export function mergeImportedProductCopy(
 ): ProductCopy {
   const category = mergeValue(previousOriginal.category, working.category, imported.category);
   const importedCategoryChanged = !sameValue(imported.category, previousOriginal.category);
-  const currentImages = new Set(imported.images);
+  const images = mergeImportedImages(imported.images, working.images);
+  const currentImages = new Set(images);
   const variants = mergeVariants(etsyListingId, previousOriginal.variants, working.variants, imported.variants)
     .map((variant) => variant.image && !currentImages.has(variant.image) ? { ...variant, image: undefined } : variant);
   return {
@@ -121,7 +136,7 @@ export function mergeImportedProductCopy(
     tags: mergeValue(previousOriginal.tags, working.tags, imported.tags),
     quantity: mergeValue(previousOriginal.quantity, working.quantity, imported.quantity),
     state: mergeValue(previousOriginal.state, working.state, imported.state),
-    images: imported.images,
+    images,
     variants,
   };
 }

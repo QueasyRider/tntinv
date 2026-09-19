@@ -222,6 +222,26 @@ export async function getProduct(id: string): Promise<Product | null> {
   return rows[0] ? mapProduct(rows[0]) : null;
 }
 
+export async function saveProductImage(productId: string, fileName: string, mimeType: string, dataBase64: string): Promise<string> {
+  await ensureDatabase();
+  const id = randomUUID();
+  const rows = await getSql()`
+    INSERT INTO product_images (id, product_id, mime_type, file_name, data_base64, created_at)
+    SELECT ${id}, id, ${mimeType}, ${fileName}, ${dataBase64}, ${new Date().toISOString()}
+    FROM products
+    WHERE id = ${productId}
+    RETURNING id
+  ` as Array<{ id: string }>;
+  if (!rows[0]) throw new Error("Product not found.");
+  return rows[0].id;
+}
+
+export async function getProductImage(id: string): Promise<{ mimeType: string; fileName: string; dataBase64: string } | null> {
+  await ensureDatabase();
+  const rows = await getSql()`SELECT mime_type, file_name, data_base64 FROM product_images WHERE id = ${id} LIMIT 1` as Array<{ mime_type: string; file_name: string; data_base64: string }>;
+  return rows[0] ? { mimeType: rows[0].mime_type, fileName: rows[0].file_name, dataBase64: rows[0].data_base64 } : null;
+}
+
 export async function deleteProduct(id: string): Promise<Product> {
   await ensureSkuIndex();
   const sql = getSql();
