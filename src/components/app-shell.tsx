@@ -51,6 +51,12 @@ export function AppShell({ initialState }: { initialState: AppState }) {
     return () => window.clearTimeout(timer);
   }, []);
 
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 5_000);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
   async function call(url: string, label: string, init: RequestInit = {}, manageBusy = true) {
     if (manageBusy) setBusy(label);
     try {
