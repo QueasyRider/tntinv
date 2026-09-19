@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { BulkEdit, type BulkOperation } from "./bulk-edit";
 import { Dashboard } from "./dashboard";
 import { History } from "./history";
+import { ImportChangeReview } from "./import-change-review";
 import { PreflightCenter } from "./preflight-center";
 import { ProductEditor } from "./product-editor";
 import { Settings, type SettingsPayload } from "./settings";
@@ -102,6 +103,7 @@ export function AppShell({ initialState }: { initialState: AppState }) {
       const inactiveNote = hiddenInactiveCount ? ` ${hiddenInactiveCount} non-active Etsy listing${hiddenInactiveCount === 1 ? " was" : "s were"} removed from view.` : "";
       const duplicateNote = duplicateSkuProductCount ? ` ${duplicateSkuProductCount} product${duplicateSkuProductCount === 1 ? "" : "s"} share SKUs and ${duplicateSkuProductCount === 1 ? "is" : "are"} marked Error for cleanup.` : "";
       setToast({ tone: "success", message: `${importedCount} active Etsy listings processed into ${visibleProductCount || importedCount} separate products.${duplicateNote}${inactiveNote}${skuNote}${imageNote}` });
+      setView("imports");
     }
     catch (error) { notifyError(error); }
     finally { setBusy(null); }
@@ -163,10 +165,11 @@ export function AppShell({ initialState }: { initialState: AppState }) {
   }
 
   return <div className="app-shell"><Sidebar view={view} onChange={changeView} /><div className="app-column"><Topbar connections={state.connections} />
-    {activeProduct ? <ProductEditor product={activeProduct} activities={state.activities} backLabel={view === "preflight" ? "Fix center" : "Inventory"} onBack={() => setActiveProductId(null)} onSave={saveProduct} onDelete={deleteActiveProduct} onExport={() => runExport([activeProduct.id])} busy={busy} />
+    {activeProduct ? <ProductEditor product={activeProduct} activities={state.activities} backLabel={view === "preflight" ? "Fix center" : view === "imports" ? "Import review" : "Inventory"} onBack={() => setActiveProductId(null)} onSave={saveProduct} onDelete={deleteActiveProduct} onExport={() => runExport([activeProduct.id])} busy={busy} />
       : view === "history" ? <History state={state} />
       : view === "settings" ? <Settings state={state} onSave={saveSettings} onTest={testConnection} busy={busy} />
       : view === "preflight" ? <PreflightCenter state={state} onOpen={openProduct} onExport={runExport} busy={busy} />
+      : view === "imports" ? <ImportChangeReview state={state} onOpen={openProduct} />
       : view === "bulk" ? <BulkEdit products={state.products} initialSelected={selected} onApply={applyBulk} busy={busy === "bulk"} />
       : <Dashboard state={state} selected={selected} setSelected={setSelected} onOpen={openProduct} onImport={runImport} onExport={runExport} onBulk={() => setBulkModal(true)} onHistory={() => changeView("history")} onPreflight={() => changeView("preflight")} busy={busy} inventoryOnly={view === "inventory"} />}
     <footer className="legal-footer">‘Etsy’ is a trademark of Etsy, Inc. This Application uses Etsy&apos;s API, but is not endorsed or certified by Etsy.</footer>

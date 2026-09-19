@@ -3,10 +3,11 @@ import { randomUUID } from "node:crypto";
 import { ensureDatabase, getSql } from "./db";
 import { decryptJson, encryptJson } from "./crypto";
 import { DEMO_PRODUCTS } from "./demo";
+import { buildImportFieldChanges } from "./import-review";
 import { mergeImportedProductCopy, productCopiesMatch, rebaseImportedProductCopy } from "./import-merge";
 import { duplicateSkuError, hasUnavailableSku, isUnavailableSku, normalizeSkuKey, UNAVAILABLE_SKU_ERROR, UNAVAILABLE_SKU_KEY } from "./sku";
 import { normalizeProductText } from "./text-format";
-import type { Activity, AppSettings, AppState, ConnectionSummary, Product, ProductCopy, ProductStatus, Provider, SyncRun, ValidationIssue } from "./types";
+import type { Activity, AppSettings, AppState, ConnectionSummary, ImportChangeReview, ImportChangeType, ImportReviewData, ImportReviewRun, Product, ProductCopy, ProductStatus, Provider, SyncRun, ValidationIssue } from "./types";
 
 interface ProductRow {
   id: string;
@@ -54,6 +55,29 @@ interface SyncRunRow {
   finished_at: string | null;
 }
 
+interface ImportReviewRow {
+  id: string;
+  sync_run_id: string;
+  product_id: string | null;
+  etsy_listing_id: string;
+  change_type: ImportChangeType;
+  before_json: string | null;
+  after_json: string | null;
+  changed_fields_json: string;
+  reviewed: boolean;
+  created_at: string;
+  reviewed_at: string | null;
+}
+
+interface ImportReviewRunRow extends SyncRunRow {
+  total_count: number | string;
+  new_count: number | string;
+  changed_count: number | string;
+  unchanged_count: number | string;
+  removed_count: number | string;
+  unreviewed_count: number | string;
+}
+
 export interface EtsyConfig { keystring: string; sharedSecret: string; shopId?: string }
 export interface SquareConfig { appId: string; appSecret: string; environment: "sandbox" | "production"; locationId?: string }
 export interface ProviderConfigMap { etsy: EtsyConfig; square: SquareConfig }
@@ -93,6 +117,44 @@ const mapSyncRun = (row: SyncRunRow): SyncRun => ({
   startedAt: row.started_at,
   finishedAt: row.finished_at,
 });
+
+const parseNullableCopy = (value: string | null): ProductCopy | null => value ? parseProductCopy(value) : null;
+
+const mapImportReviewRun = (row: ImportReviewRunRow): ImportReviewRun => ({
+  id: row.id,
+  status: row.status,
+  selectedCount: Number(row.selected_count),
+  successCount: Number(row.success_count),
+  errorCount: Number(row.error_count),
+  startedAt: row.started_at,
+  finishedAt: row.finished_at,
+  totalCount: Number(row.total_count),
+  newCount: Number(row.new_count),
+  changedCount: Number(row.changed_count),
+  unchangedCount: Number(row.unchanged_count),
+  removedCount: Number(row.removed_count),
+  unreviewedCount: Number(row.unreviewed_count),
+});
+
+const mapImportReview = (row: ImportReviewRow): ImportChangeReview => {
+  const before = parseNullableCopy(row.before_json);
+  const after = parseNullableCopy(row.after_json);
+  const display = after || before;
+  return {
+    id: row.id,
+    runId: row.sync_run_id,
+    productId: row.product_id,
+    etsyListingId: row.etsy_listing_id,
+    changeType: row.change_type,
+    title: display?.title || "Untitled listing",
+    sku: display?.sku || "No SKU",
+    image: display?.images[0] || null,
+    changes: JSON.parse(row.changed_fields_json) as ImportChangeReview["changes"],
+    reviewed: Boolean(row.reviewed),
+    createdAt: row.created_at,
+    reviewedAt: row.reviewed_at,
+  };
+};
 
 function productSkuKeys(copy: ProductCopy): string[] {
   return [...new Set([copy.sku, ...copy.variants.map((variant) => variant.sku)].map(normalizeSkuKey).filter((sku) => Boolean(sku) && sku !== UNAVAILABLE_SKU_KEY))];
@@ -222,6 +284,37 @@ export async function getProduct(id: string): Promise<Product | null> {
   return rows[0] ? mapProduct(rows[0]) : null;
 }
 
+async function recordImportReview(
+  runId: string,
+  productId: string,
+  etsyListingId: string,
+  changeType: ImportChangeType,
+  before: ProductCopy | null,
+  after: ProductCopy | null,
+): Promise<void> {
+  const sql = getSql();
+  const now = new Date().toISOString();
+  const changes = buildImportFieldChanges(before, after);
+  await sql`
+    INSERT INTO import_change_reviews (
+      id, sync_run_id, product_id, etsy_listing_id, change_type,
+      before_json, after_json, changed_fields_json, reviewed, created_at, reviewed_at
+    ) VALUES (
+      ${randomUUID()}, ${runId}, ${productId}, ${etsyListingId}, ${changeType},
+      ${before ? JSON.stringify(before) : null}, ${after ? JSON.stringify(after) : null}, ${JSON.stringify(changes)}, FALSE, ${now}, NULL
+    )
+    ON CONFLICT (sync_run_id, etsy_listing_id) DO UPDATE SET
+      product_id = EXCLUDED.product_id,
+      change_type = EXCLUDED.change_type,
+      before_json = EXCLUDED.before_json,
+      after_json = EXCLUDED.after_json,
+      changed_fields_json = EXCLUDED.changed_fields_json,
+      reviewed = FALSE,
+      created_at = EXCLUDED.created_at,
+      reviewed_at = NULL
+  `;
+}
+
 export async function saveProductImage(productId: string, fileName: string, mimeType: string, dataBase64: string): Promise<string> {
   await ensureDatabase();
   const id = randomUUID();
@@ -276,7 +369,7 @@ export function validateProduct(copy: ProductCopy): ValidationIssue[] {
   return issues;
 }
 
-export async function upsertImportedProduct(etsyListingId: string, original: ProductCopy, preferredStatus: ProductStatus = "needs_review"): Promise<Product> {
+export async function upsertImportedProduct(etsyListingId: string, original: ProductCopy, preferredStatus: ProductStatus = "needs_review", importRunId?: string): Promise<Product> {
   await ensureSkuIndex();
   const sql = getSql();
   const listingRows = await sql`SELECT * FROM products WHERE etsy_listing_id = ${etsyListingId} LIMIT 1` as ProductRow[];
@@ -307,6 +400,7 @@ export async function upsertImportedProduct(etsyListingId: string, original: Pro
       WHERE id = ${existing.id}
     `;
     await replaceSkuIndex(existing.id, working);
+    if (importRunId) await recordImportReview(importRunId, existing.id, etsyListingId, productCopiesMatch(existingOriginal, original) ? "unchanged" : "changed", existingOriginal, original);
     return (await getProduct(existing.id))!;
   }
   const id = randomUUID();
@@ -314,6 +408,7 @@ export async function upsertImportedProduct(etsyListingId: string, original: Pro
   const skuError = hasUnavailableSku(original) ? UNAVAILABLE_SKU_ERROR : null;
   await sql`INSERT INTO products (id, etsy_listing_id, original_json, working_json, status, import_status, last_error, imported_at, updated_at) VALUES (${id}, ${etsyListingId}, ${originalJson}, ${originalJson}, ${skuError ? "error" : preferredStatus}, ${skuError ? "sku_error" : "imported"}, ${skuError}, ${now}, ${now})`;
   await replaceSkuIndex(id, original);
+  if (importRunId) await recordImportReview(importRunId, id, etsyListingId, "new", null, original);
   return (await getProduct(id))!;
 }
 
@@ -390,11 +485,11 @@ export async function addActivity(kind: Activity["kind"], title: string, detail 
   await getSql()`INSERT INTO activities (id, kind, title, detail, product_id, created_at) VALUES (${randomUUID()}, ${kind}, ${title}, ${detail}, ${productId}, ${new Date().toISOString()})`;
 }
 
-export async function seedDemoProducts(): Promise<number> {
+export async function seedDemoProducts(importRunId?: string): Promise<number> {
   let count = 0;
   const sql = getSql();
   for (const seed of DEMO_PRODUCTS) {
-    const product = await upsertImportedProduct(seed.etsyListingId, seed.original, seed.status);
+    const product = await upsertImportedProduct(seed.etsyListingId, seed.original, seed.status, importRunId);
     const working = { ...seed.original, ...seed.working, variants: seed.working?.variants ?? seed.original.variants };
     await sql`UPDATE products SET working_json = ${JSON.stringify(working)}, status = ${seed.status}, import_status = 'demo', square_item_id = ${seed.squareItemId ?? null}, last_error = ${seed.lastError ?? null}, exported_at = ${seed.status === "exported" ? new Date().toISOString() : null} WHERE id = ${product.id}`;
     count++;
@@ -513,10 +608,12 @@ export async function hideProductsNotSeenDuringImport(id: string): Promise<numbe
     SET import_status = 'inactive_on_etsy', updated_at = ${new Date().toISOString()}
     WHERE imported_at < ${runs[0].started_at}
       AND import_status <> 'inactive_on_etsy'
-    RETURNING id
-  ` as Array<{ id: string }>;
+    RETURNING id, etsy_listing_id, original_json
+  ` as Array<{ id: string; etsy_listing_id: string; original_json: string }>;
   const affectedSkuKeys = new Set<string>();
   for (const row of rows) {
+    const original = parseProductCopy(row.original_json);
+    await recordImportReview(id, row.id, row.etsy_listing_id, "removed", original, null);
     const skuRows = await sql`SELECT sku_key FROM product_skus WHERE product_id = ${row.id}` as Array<{ sku_key: string }>;
     skuRows.forEach((skuRow) => affectedSkuKeys.add(skuRow.sku_key));
     await sql`DELETE FROM product_skus WHERE product_id = ${row.id}`;
@@ -541,6 +638,50 @@ export async function getSyncRuns(): Promise<SyncRun[]> {
   await ensureDatabase();
   const rows = await getSql()`SELECT id, direction, status, selected_count, success_count, error_count, error_json, started_at, finished_at FROM sync_runs ORDER BY started_at DESC LIMIT 50` as SyncRunRow[];
   return rows.map(mapSyncRun);
+}
+
+export async function getImportReviewData(requestedRunId?: string): Promise<ImportReviewData> {
+  await ensureDatabase();
+  const sql = getSql();
+  const runRows = await sql`
+    SELECT
+      sr.id, sr.direction, sr.status, sr.selected_count, sr.success_count, sr.error_count,
+      sr.error_json, sr.started_at, sr.finished_at,
+      COUNT(icr.id)::int AS total_count,
+      COUNT(icr.id) FILTER (WHERE icr.change_type = 'new')::int AS new_count,
+      COUNT(icr.id) FILTER (WHERE icr.change_type = 'changed')::int AS changed_count,
+      COUNT(icr.id) FILTER (WHERE icr.change_type = 'unchanged')::int AS unchanged_count,
+      COUNT(icr.id) FILTER (WHERE icr.change_type = 'removed')::int AS removed_count,
+      COUNT(icr.id) FILTER (WHERE icr.reviewed = FALSE AND icr.change_type <> 'unchanged')::int AS unreviewed_count
+    FROM sync_runs sr
+    LEFT JOIN import_change_reviews icr ON icr.sync_run_id = sr.id
+    WHERE sr.direction = 'etsy_to_local'
+    GROUP BY sr.id, sr.direction, sr.status, sr.selected_count, sr.success_count, sr.error_count, sr.error_json, sr.started_at, sr.finished_at
+    ORDER BY sr.started_at DESC
+    LIMIT 20
+  ` as ImportReviewRunRow[];
+  const runs = runRows.map(mapImportReviewRun);
+  const selectedRunId = requestedRunId && runs.some((run) => run.id === requestedRunId) ? requestedRunId : runs[0]?.id || null;
+  if (!selectedRunId) return { runs, selectedRunId: null, reviews: [] };
+  const reviewRows = await sql`
+    SELECT id, sync_run_id, product_id, etsy_listing_id, change_type, before_json, after_json,
+           changed_fields_json, reviewed, created_at, reviewed_at
+    FROM import_change_reviews
+    WHERE sync_run_id = ${selectedRunId}
+    ORDER BY
+      CASE change_type WHEN 'changed' THEN 1 WHEN 'new' THEN 2 WHEN 'removed' THEN 3 ELSE 4 END,
+      created_at DESC
+  ` as ImportReviewRow[];
+  return { runs, selectedRunId, reviews: reviewRows.map(mapImportReview) };
+}
+
+export async function markImportReviewsReviewed(runId: string, reviewId?: string): Promise<number> {
+  await ensureDatabase();
+  const now = new Date().toISOString();
+  const rows = reviewId
+    ? await getSql()`UPDATE import_change_reviews SET reviewed = TRUE, reviewed_at = ${now} WHERE sync_run_id = ${runId} AND id = ${reviewId} RETURNING id` as Array<{ id: string }>
+    : await getSql()`UPDATE import_change_reviews SET reviewed = TRUE, reviewed_at = ${now} WHERE sync_run_id = ${runId} AND change_type <> 'unchanged' AND reviewed = FALSE RETURNING id` as Array<{ id: string }>;
+  return rows.length;
 }
 
 export async function saveOauthState(provider: Provider, state: string, verifierEnc: string | null, expiresAt: string): Promise<void> {

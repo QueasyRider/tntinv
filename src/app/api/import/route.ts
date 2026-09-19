@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     if (settings.mode === "demo") {
       const run = await startSyncRun("etsy_to_local", 0);
       runId = run.id;
-      const count = await seedDemoProducts();
+      const count = await seedDemoProducts(run.id);
       await finishSyncRun(run.id, count, []);
       const state = await getAppState();
       return Response.json({ ok: true, count, missingImageCount: 0, skuErrorCount: 0, hiddenInactiveCount: 0, duplicateSkuProductCount: 0, visibleProductCount: state.metrics.imported, total: count, nextOffset: count, done: true, runId, state });
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
       throw new Error("The Etsy import session could not be resumed. Start the import again.");
     }
 
-    const result = await importFromEtsy({ offset, limit: IMPORT_BATCH_SIZE });
+    const result = await importFromEtsy({ offset, limit: IMPORT_BATCH_SIZE, runId });
     const importedCount = await updateSyncRunProgress(runId, result.total, result.count);
     if (!result.done) {
       console.log(JSON.stringify({ level: "info", message: "Etsy import batch completed", route: "/api/import", requestId, offset, count: result.count, total: result.total, nextOffset: result.nextOffset, durationMs: Date.now() - startedAt }));

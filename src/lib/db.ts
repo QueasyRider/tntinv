@@ -91,6 +91,23 @@ async function initializeDatabase(): Promise<void> {
     )
   `;
   await sql`
+    CREATE TABLE IF NOT EXISTS import_change_reviews (
+      id TEXT PRIMARY KEY,
+      sync_run_id TEXT NOT NULL REFERENCES sync_runs(id) ON DELETE CASCADE,
+      product_id TEXT REFERENCES products(id) ON DELETE SET NULL,
+      etsy_listing_id TEXT NOT NULL,
+      change_type TEXT NOT NULL CHECK(change_type IN ('new', 'changed', 'unchanged', 'removed')),
+      before_json TEXT,
+      after_json TEXT,
+      changed_fields_json TEXT NOT NULL DEFAULT '[]',
+      reviewed BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TEXT NOT NULL,
+      reviewed_at TEXT
+    )
+  `;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS import_change_reviews_run_listing_idx ON import_change_reviews(sync_run_id, etsy_listing_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS import_change_reviews_run_idx ON import_change_reviews(sync_run_id, reviewed, change_type)`;
+  await sql`
     CREATE TABLE IF NOT EXISTS oauth_states (
       state TEXT PRIMARY KEY,
       provider TEXT NOT NULL,

@@ -62,6 +62,7 @@ export interface EtsyImportResult {
 interface EtsyImportOptions {
   offset?: number;
   limit?: number;
+  runId?: string;
 }
 
 async function refreshEtsyToken(config: EtsyConfig, token: ProviderToken): Promise<ProviderToken> {
@@ -291,7 +292,7 @@ export async function importFromEtsy(options: EtsyImportOptions = {}): Promise<E
         variantCount += product.variants.length;
         variantImageCount += product.variants.filter((variant) => Boolean(variant.image)).length;
       }
-      const imported = await upsertImportedProduct(String(listing.listing_id), product);
+      const imported = await upsertImportedProduct(String(listing.listing_id), product, "needs_review", options.runId);
       if (hasUnavailableSku(imported.working)) skuErrorCount++;
     }
   }

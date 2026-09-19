@@ -98,3 +98,49 @@ export interface ValidationIssue {
   message: string;
   severity: "error" | "warning";
 }
+
+export type ImportChangeType = "new" | "changed" | "unchanged" | "removed";
+
+export interface ImportFieldChange {
+  field: string;
+  label: string;
+  before: string;
+  after: string;
+}
+
+export interface ImportChangeReview {
+  id: string;
+  runId: string;
+  productId: string | null;
+  etsyListingId: string;
+  changeType: ImportChangeType;
+  title: string;
+  sku: string;
+  image: string | null;
+  changes: ImportFieldChange[];
+  reviewed: boolean;
+  createdAt: string;
+  reviewedAt: string | null;
+}
+
+export interface ImportReviewRun {
+  id: string;
+  status: string;
+  selectedCount: number;
+  successCount: number;
+  errorCount: number;
+  startedAt: string;
+  finishedAt: string | null;
+  totalCount: number;
+  newCount: number;
+  changedCount: number;
+  unchangedCount: number;
+  removedCount: number;
+  unreviewedCount: number;
+}
+
+export interface ImportReviewData {
+  runs: ImportReviewRun[];
+  selectedRunId: string | null;
+  reviews: ImportChangeReview[];
+}
