@@ -5,10 +5,12 @@ import { useEffect, useMemo, useState } from "react";
 import { BulkEdit, type BulkOperation } from "./bulk-edit";
 import { Dashboard } from "./dashboard";
 import { History } from "./history";
+import { PreflightCenter } from "./preflight-center";
 import { ProductEditor } from "./product-editor";
 import { Settings, type SettingsPayload } from "./settings";
 import { Sidebar, type View } from "./sidebar";
 import { Topbar } from "./topbar";
+import { buildPreflightReports } from "@/lib/preflight";
 import type { AppState, Product, ProductCopy } from "@/lib/types";
 
 interface ApiResult { ok: boolean; error?: string; errors?: string[]; state?: AppState; count?: number; missingImageCount?: number; skuErrorCount?: number; hiddenInactiveCount?: number; duplicateSkuProductCount?: number; visibleProductCount?: number; success?: number; label?: string; total?: number; nextOffset?: number; done?: boolean; runId?: string }
@@ -106,6 +108,14 @@ export function AppShell({ initialState }: { initialState: AppState }) {
   }
   async function runExport(ids: string[]) {
     if (!ids.length) { setToast({ tone: "error", message: "Select at least one product first." }); return; }
+    const selectedIds = new Set(ids);
+    const blocked = buildPreflightReports(state.products).filter((report) => selectedIds.has(report.product.id) && report.errorCount > 0);
+    if (blocked.length) {
+      setSelected(new Set(blocked.map((report) => report.product.id)));
+      setView("preflight");
+      setToast({ tone: "error", message: `${blocked.length} selected product${blocked.length === 1 ? " has" : "s have"} blocking issues. Fix ${blocked.length === 1 ? "it" : "them"} before exporting.` });
+      return;
+    }
     try { const result = await call("/api/export", "export", { method: "POST", body: JSON.stringify({ ids }) }); setSelected(new Set()); setToast({ tone: "success", message: `${result.success || ids.length} product${ids.length === 1 ? "" : "s"} exported to Square.` }); }
     catch (error) { notifyError(error); }
   }
@@ -153,11 +163,12 @@ export function AppShell({ initialState }: { initialState: AppState }) {
   }
 
   return <div className="app-shell"><Sidebar view={view} onChange={changeView} /><div className="app-column"><Topbar connections={state.connections} />
-    {activeProduct ? <ProductEditor product={activeProduct} activities={state.activities} onBack={() => setActiveProductId(null)} onSave={saveProduct} onDelete={deleteActiveProduct} onExport={() => runExport([activeProduct.id])} busy={busy} />
+    {activeProduct ? <ProductEditor product={activeProduct} activities={state.activities} backLabel={view === "preflight" ? "Fix center" : "Inventory"} onBack={() => setActiveProductId(null)} onSave={saveProduct} onDelete={deleteActiveProduct} onExport={() => runExport([activeProduct.id])} busy={busy} />
       : view === "history" ? <History state={state} />
       : view === "settings" ? <Settings state={state} onSave={saveSettings} onTest={testConnection} busy={busy} />
+      : view === "preflight" ? <PreflightCenter state={state} onOpen={openProduct} onExport={runExport} busy={busy} />
       : view === "bulk" ? <BulkEdit products={state.products} initialSelected={selected} onApply={applyBulk} busy={busy === "bulk"} />
-      : <Dashboard state={state} selected={selected} setSelected={setSelected} onOpen={openProduct} onImport={runImport} onExport={runExport} onBulk={() => setBulkModal(true)} onHistory={() => changeView("history")} busy={busy} inventoryOnly={view === "inventory"} />}
+      : <Dashboard state={state} selected={selected} setSelected={setSelected} onOpen={openProduct} onImport={runImport} onExport={runExport} onBulk={() => setBulkModal(true)} onHistory={() => changeView("history")} onPreflight={() => changeView("preflight")} busy={busy} inventoryOnly={view === "inventory"} />}
     <footer className="legal-footer">‘Etsy’ is a trademark of Etsy, Inc. This Application uses Etsy&apos;s API, but is not endorsed or certified by Etsy.</footer>
   </div>
   {bulkModal && <BulkEdit products={state.products} initialSelected={selected} onApply={applyBulk} onClose={() => setBulkModal(false)} modal busy={busy === "bulk"} />}

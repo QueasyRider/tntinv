@@ -1,11 +1,12 @@
 "use client";
 
-import { Boxes, Clock3, LayoutDashboard, Settings2, SlidersHorizontal, Zap } from "lucide-react";
+import { Boxes, Clock3, LayoutDashboard, Settings2, ShieldCheck, SlidersHorizontal, Zap } from "lucide-react";
 
-export type View = "dashboard" | "inventory" | "bulk" | "history" | "settings";
+export type View = "dashboard" | "inventory" | "preflight" | "bulk" | "history" | "settings";
 const nav = [
   { id: "dashboard" as const, label: "Dashboard", icon: LayoutDashboard },
   { id: "inventory" as const, label: "Inventory", icon: Boxes },
+  { id: "preflight" as const, label: "Fix center", icon: ShieldCheck },
   { id: "bulk" as const, label: "Bulk edit", icon: SlidersHorizontal },
   { id: "history" as const, label: "Export history", icon: Clock3 },
   { id: "settings" as const, label: "API settings", icon: Settings2 },

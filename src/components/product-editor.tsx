@@ -79,9 +79,9 @@ async function prepareProductPhoto(file: File): Promise<File> {
   }
 }
 
-export function ProductEditor({ product, activities, onBack, onSave, onDelete, onExport, busy }: {
+export function ProductEditor({ product, activities, backLabel = "Inventory", onBack, onSave, onDelete, onExport, busy }: {
   product: Product; activities: Activity[]; onBack: () => void; onSave: (working: ProductCopy, ready: boolean) => Promise<void>;
-  onDelete: () => Promise<void>; onExport: () => void; busy: string | null;
+  backLabel?: string; onDelete: () => Promise<void>; onExport: () => void; busy: string | null;
 }) {
   const workingCopy = useMemo<ProductCopy>(() => ({
     ...product.working,
@@ -147,8 +147,8 @@ export function ProductEditor({ product, activities, onBack, onSave, onDelete, o
   ];
 
   return <main className="editor-page">
-    <div className="editor-breadcrumb"><button onClick={onBack}><ArrowLeft size={16} /> Inventory</button><span>/</span><span>{product.original.title}</span></div>
-    <section className="editor-heading"><div><h1>{draft.title.toUpperCase()}</h1><span className={`draft-badge ${dirty ? "dirty" : ""}`}>{dirty ? "UNSAVED CHANGES" : product.status.replace("_", " ").toUpperCase()}</span></div><p>Edits here never change Etsy. ★</p><button className="button outline" onClick={onBack}><ArrowLeft size={16} /> Back to inventory</button></section>
+    <div className="editor-breadcrumb"><button onClick={onBack}><ArrowLeft size={16} /> {backLabel}</button><span>/</span><span>{product.original.title}</span></div>
+    <section className="editor-heading"><div><h1>{draft.title.toUpperCase()}</h1><span className={`draft-badge ${dirty ? "dirty" : ""}`}>{dirty ? "UNSAVED CHANGES" : product.status.replace("_", " ").toUpperCase()}</span></div><p>Edits here never change Etsy. ★</p><button className="button outline" onClick={onBack}><ArrowLeft size={16} /> Back to {backLabel.toLowerCase()}</button></section>
     <div className="editor-tabs"><button className={tab === "edit" ? "active" : ""} onClick={() => setTab("edit")}>Edit working copy</button><button className={tab === "preview" ? "active" : ""} onClick={() => setTab("preview")}>Square preview <span>{differences.length}</span></button><button className={tab === "history" ? "active" : ""} onClick={() => setTab("history")}>Sync history</button></div>
     {product.lastError && <div className="product-error-banner" role="alert"><AlertTriangle size={18} /><div><strong>This product needs attention</strong><span>{product.lastError}</span></div></div>}
 

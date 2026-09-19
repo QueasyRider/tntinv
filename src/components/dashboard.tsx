@@ -1,7 +1,8 @@
 "use client";
 
-import { AlertTriangle, ArrowUpDown, ArrowUpRight, Box, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleAlert, Download, Edit3, ExternalLink, Filter, PackageCheck, Search, SquareArrowOutUpRight, Upload, X } from "lucide-react";
+import { AlertTriangle, ArrowUpDown, ArrowUpRight, Box, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleAlert, Download, Edit3, ExternalLink, Filter, PackageCheck, Search, ShieldCheck, SquareArrowOutUpRight, Upload, X } from "lucide-react";
 import { useMemo, useState } from "react";
+import { buildPreflightReports, summarizePreflight } from "@/lib/preflight";
 import { productImageDisplayUrl } from "@/lib/product-images";
 import type { Activity, AppState, Product, ProductStatus } from "@/lib/types";
 
@@ -30,14 +31,15 @@ function SortIndicator({ active, direction }: { active: boolean; direction: Sort
   return direction === "ascending" ? <ChevronUp size={14} /> : <ChevronDown size={14} />;
 }
 
-export function Dashboard({ state, selected, setSelected, onOpen, onImport, onExport, onBulk, onHistory, busy, inventoryOnly = false }: {
+export function Dashboard({ state, selected, setSelected, onOpen, onImport, onExport, onBulk, onHistory, onPreflight, busy, inventoryOnly = false }: {
   state: AppState; selected: Set<string>; setSelected: (value: Set<string>) => void; onOpen: (product: Product) => void;
-  onImport: () => void; onExport: (ids: string[]) => void; onBulk: () => void; onHistory: () => void; busy: string | null; inventoryOnly?: boolean;
+  onImport: () => void; onExport: (ids: string[]) => void; onBulk: () => void; onHistory: () => void; onPreflight: () => void; busy: string | null; inventoryOnly?: boolean;
 }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | ProductStatus>("all");
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection } | null>(null);
+  const preflight = useMemo(() => summarizePreflight(buildPreflightReports(state.products)), [state.products]);
   const products = useMemo(() => {
     const query = search.trim().toLowerCase();
     const filtered = state.products.filter((product) => {
@@ -68,7 +70,7 @@ export function Dashboard({ state, selected, setSelected, onOpen, onImport, onEx
 
   return <div className={`dashboard-grid ${inventoryOnly ? "inventory-wide" : ""}`}><main className="dashboard-main">
     <section className="page-head"><div><h1>{inventoryOnly ? "INVENTORY" : "INVENTORY TRANSFER"}</h1><p>Same good stuff. New homes.</p></div><div className="head-actions"><button className="button lime" onClick={onImport} disabled={Boolean(busy)}><Download size={18} />{busy === "import" ? "Importing…" : "Import from Etsy"}</button><button className="button dark" onClick={() => onExport([...selected])} disabled={!selected.size || Boolean(busy)}><Upload size={18} />{busy === "export" ? "Exporting…" : "Export selected"}</button></div></section>
-    {!inventoryOnly && <section className="metrics" aria-label="Inventory metrics"><Metric label="Products" value={state.metrics.imported} icon={Box} /><Metric label="Ready" value={state.metrics.ready} icon={PackageCheck} tone="green" /><Metric label="Exported" value={state.metrics.exported} icon={SquareArrowOutUpRight} tone="blue" /><Metric label="Errors" value={state.metrics.errors} icon={AlertTriangle} tone="pink" /></section>}
+    {!inventoryOnly && <><section className="metrics" aria-label="Inventory metrics"><Metric label="Products" value={state.metrics.imported} icon={Box} /><Metric label="Ready" value={state.metrics.ready} icon={PackageCheck} tone="green" /><Metric label="Exported" value={state.metrics.exported} icon={SquareArrowOutUpRight} tone="blue" /><Metric label="Errors" value={state.metrics.errors} icon={AlertTriangle} tone="pink" /></section><button className={`preflight-strip ${preflight.blockedProducts ? "has-errors" : ""}`} onClick={onPreflight}><span><ShieldCheck size={20} /><strong>Preflight &amp; Fix Center</strong></span><span>{preflight.blockedProducts ? `${preflight.blockedProducts} product${preflight.blockedProducts === 1 ? " has" : "s have"} blocking issues` : preflight.attentionProducts ? `${preflight.attentionProducts} product${preflight.attentionProducts === 1 ? " needs" : "s need"} review` : "All products passed local checks"}<ArrowUpRight size={16} /></span></button></>}
     <section className="table-workspace">
       <div className="table-tools"><label className="search"><Search size={18} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search title, SKU, listing ID" /></label><div className="filters" aria-label="Product status filter">{(["all", "ready", "needs_review", "exported", "error"] as const).map((id) => <button key={id} className={filter === id ? "active" : ""} onClick={() => { setFilter(id); setPage(1); }}>{id === "all" ? `All products (${state.metrics.imported})` : `${statusLabel[id]} (${state.products.filter((product) => product.status === id).length})`}</button>)}</div><button className="filter-icon" aria-label="More filters"><Filter size={17} /></button></div>
       {selected.size > 0 && <div className="selection-bar"><strong><span className="checked"><Check size={15} /></span>{selected.size} product{selected.size === 1 ? "" : "s"} selected</strong><button onClick={() => selected.size === 1 && onOpen(state.products.find((product) => selected.has(product.id))!)} disabled={selected.size !== 1}><Edit3 size={15} /> Edit</button><button onClick={onBulk}><ArrowUpRight size={15} /> Bulk tools</button><button onClick={() => onExport([...selected])}><Upload size={15} /> Export selected</button><button className="clear" onClick={() => setSelected(new Set())}>Clear selection <X size={16} /></button></div>}
