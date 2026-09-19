@@ -41,7 +41,6 @@ a { color: inherit; }
 .nav-item:hover { background: #ffffff0d; }
 .nav-item.active { color: var(--ink); background: var(--lime); box-shadow: 3px 3px 0 #000; }
 .sidebar-art { position: relative; z-index: 1; margin-top: auto; min-height: 190px; padding: 34px 22px; display: flex; align-items: flex-start; gap: 10px; color: var(--ink); background: var(--paper); clip-path: polygon(0 16%, 15% 12%, 32% 19%, 52% 8%, 70% 16%, 100% 10%, 100% 100%, 0 100%); }
-.sidebar-art strong { padding-top: 27px; font: 24px/1.02 var(--display); transform: rotate(-6deg); }
 .sidebar-art svg { margin-top: 54px; fill: var(--lime); }
 .sidebar-foot { position: relative; z-index: 2; padding: 15px 22px 22px; font-size: 9px; line-height: 1.65; letter-spacing: 2.4px; background: var(--ink); }
 .sidebar-foot span { float: right; opacity: .5; letter-spacing: 0; }

@@ -17,7 +17,7 @@ export function Sidebar({ view, onChange }: { view: View; onChange: (view: View)
   return <aside className="sidebar">
     <button className="brand" onClick={() => onChange("dashboard")} aria-label="Twisted and Thrifted dashboard"><span>TWISTED <em>&amp;</em></span><span>THRIFTED</span><small>Inventory moves differently</small></button>
     <nav aria-label="Main navigation">{nav.map(({ id, label, icon: Icon }) => <button key={id} className={view === id ? "nav-item active" : "nav-item"} onClick={() => onChange(id)}><Icon size={19} strokeWidth={1.9} /><span>{label}</span></button>)}</nav>
-    <div className="sidebar-art" aria-hidden="true"><Zap size={42} /><strong>GOOD CLOTHES<br />BRIGHTER DAYS</strong></div>
+      <div className="sidebar-art" aria-hidden="true"><Zap size={42} /></div>
     <div className="sidebar-foot">VINTAGE PEOPLE<br />BETTER PLANET <span>v1.0.0</span></div>
   </aside>;
 }
