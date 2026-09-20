@@ -89,6 +89,8 @@ export interface ProviderToken {
   accountId?: string;
 }
 
+const MAX_SYNC_RUN_HISTORY = 50;
+
 const parseProductCopy = (value: string): ProductCopy => normalizeProductText(JSON.parse(value) as ProductCopy);
 
 const mapProduct = (row: ProductRow): Product => ({
@@ -538,11 +540,12 @@ export async function updateConnectionTest(provider: Provider, success: boolean,
 
 export async function getAppState(): Promise<AppState> {
   await ensureDatabase();
+  await pruneSyncRunHistory();
   const settings = await getSettings();
   const countRows = await getSql()`SELECT COUNT(*)::int AS count FROM products` as Array<{ count: number }>;
   if (settings.mode === "demo" && !Number(countRows[0]?.count || 0)) await seedDemoProducts();
   const activityPromise = (async () => await getSql()`SELECT id, kind, title, detail, product_id, created_at FROM activities ORDER BY created_at DESC LIMIT 40` as ActivityRow[])();
-  const syncPromise = (async () => await getSql()`SELECT id, direction, status, selected_count, success_count, error_count, error_json, started_at, finished_at FROM sync_runs ORDER BY started_at DESC LIMIT 50` as SyncRunRow[])();
+  const syncPromise = (async () => await getSql()`SELECT id, direction, status, selected_count, success_count, error_count, error_json, started_at, finished_at FROM sync_runs ORDER BY started_at DESC LIMIT ${MAX_SYNC_RUN_HISTORY}` as SyncRunRow[])();
   const [products, activityRows, syncRows, etsy, square] = await Promise.all([
     getProducts(),
     activityPromise,
@@ -567,11 +570,27 @@ export async function getAppState(): Promise<AppState> {
   };
 }
 
+async function pruneSyncRunHistory(): Promise<void> {
+  await getSql()`
+    DELETE FROM sync_runs
+    WHERE id IN (
+      SELECT id
+      FROM (
+        SELECT id, status, ROW_NUMBER() OVER (ORDER BY started_at DESC, id DESC) AS history_position
+        FROM sync_runs
+      ) ranked_runs
+      WHERE history_position > ${MAX_SYNC_RUN_HISTORY}
+        AND status <> 'running'
+    )
+  `;
+}
+
 export async function startSyncRun(direction: string, selectedCount: number): Promise<{ id: string; idempotencyKey: string }> {
   await ensureDatabase();
   const id = randomUUID();
   const idempotencyKey = randomUUID();
   await getSql()`INSERT INTO sync_runs (id, direction, status, selected_count, idempotency_key, started_at) VALUES (${id}, ${direction}, 'running', ${selectedCount}, ${idempotencyKey}, ${new Date().toISOString()})`;
+  await pruneSyncRunHistory();
   return { id, idempotencyKey };
 }
 
@@ -579,6 +598,7 @@ export async function finishSyncRun(id: string, success: number, errors: string[
   await ensureDatabase();
   const status = errors.length ? (success ? "partial" : "failed") : "completed";
   await getSql()`UPDATE sync_runs SET status = ${status}, success_count = ${success}, error_count = ${errors.length}, error_json = ${errors.length ? JSON.stringify(errors) : null}, finished_at = ${new Date().toISOString()} WHERE id = ${id}`;
+  await pruneSyncRunHistory();
 }
 
 export async function updateSyncRunProgress(id: string, selectedCount: number, successDelta: number): Promise<number> {
@@ -632,11 +652,13 @@ export async function failSyncRun(id: string, error: string): Promise<void> {
         finished_at = ${new Date().toISOString()}
     WHERE id = ${id} AND status = 'running'
   `;
+  await pruneSyncRunHistory();
 }
 
 export async function getSyncRuns(): Promise<SyncRun[]> {
   await ensureDatabase();
-  const rows = await getSql()`SELECT id, direction, status, selected_count, success_count, error_count, error_json, started_at, finished_at FROM sync_runs ORDER BY started_at DESC LIMIT 50` as SyncRunRow[];
+  await pruneSyncRunHistory();
+  const rows = await getSql()`SELECT id, direction, status, selected_count, success_count, error_count, error_json, started_at, finished_at FROM sync_runs ORDER BY started_at DESC LIMIT ${MAX_SYNC_RUN_HISTORY}` as SyncRunRow[];
   return rows.map(mapSyncRun);
 }
 
