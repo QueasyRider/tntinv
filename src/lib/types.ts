@@ -65,6 +65,7 @@ export interface ConnectionSummary {
 }
 
 export interface AppSettings {
+  siteName: string;
   mode: "demo" | "live";
   etsyShopId: string;
   squareEnvironment: "sandbox" | "production";

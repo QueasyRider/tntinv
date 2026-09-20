@@ -2,16 +2,17 @@
 
 import { CheckCircle2, ExternalLink, Eye, EyeOff, KeyRound, LockKeyhole, PlugZap, Save, ShieldCheck } from "lucide-react";
 import { useState } from "react";
-import type { AppState } from "@/lib/types";
+import type { AppSettings, AppState } from "@/lib/types";
 
 export interface SettingsPayload {
-  settings: { mode: "demo" | "live"; etsyShopId: string; squareEnvironment: "sandbox" | "production"; squareLocationId: string; publicBaseUrl: string };
+  settings: AppSettings;
   etsy?: { keystring?: string; sharedSecret?: string; shopId?: string };
   square?: { appId?: string; appSecret?: string; environment?: "sandbox" | "production"; locationId?: string };
 }
 
 export function Settings({ state, onSave, onTest, busy }: { state: AppState; onSave: (payload: SettingsPayload) => void; onTest: (provider: "etsy" | "square") => void; busy: string | null }) {
   const [showSecrets, setShowSecrets] = useState(false);
+  const [siteName, setSiteName] = useState(state.settings.siteName);
   const [mode, setMode] = useState(state.settings.mode);
   const [publicBaseUrl, setPublicBaseUrl] = useState(state.settings.publicBaseUrl);
   const [etsyShopId, setEtsyShopId] = useState(state.settings.etsyShopId);
@@ -19,8 +20,9 @@ export function Settings({ state, onSave, onTest, busy }: { state: AppState; onS
   const [squareEnvironment, setSquareEnvironment] = useState(state.settings.squareEnvironment);
   const [squareLocationId, setSquareLocationId] = useState(state.settings.squareLocationId);
   const [squareAppId, setSquareAppId] = useState(""); const [squareSecret, setSquareSecret] = useState("");
-  const save = () => onSave({ settings: { mode, publicBaseUrl, etsyShopId, squareEnvironment, squareLocationId }, etsy: etsyKey || etsySecret ? { keystring: etsyKey, sharedSecret: etsySecret, shopId: etsyShopId } : undefined, square: squareAppId || squareSecret ? { appId: squareAppId, appSecret: squareSecret, environment: squareEnvironment, locationId: squareLocationId } : undefined });
-  return <main className="section-page settings-page"><header className="section-heading"><div><h1>API SETTINGS</h1><p>Connect the developer apps you already created. Credentials stay encrypted on this server.</p></div><div className="security-note"><ShieldCheck size={20} /><span>Secrets never reach the browser after save</span></div></header>
+  const save = () => onSave({ settings: { siteName, mode, publicBaseUrl, etsyShopId, squareEnvironment, squareLocationId }, etsy: etsyKey || etsySecret ? { keystring: etsyKey, sharedSecret: etsySecret, shopId: etsyShopId } : undefined, square: squareAppId || squareSecret ? { appId: squareAppId, appSecret: squareSecret, environment: squareEnvironment, locationId: squareLocationId } : undefined });
+  return <main className="section-page settings-page"><header className="section-heading"><div><h1>SETTINGS</h1><p>Customize this workspace and manage the Etsy and Square apps you already created.</p></div><div className="security-note"><ShieldCheck size={20} /><span>Secrets never reach the browser after save</span></div></header>
+    <section className="workspace-identity"><div><h2>Workspace identity</h2><p>This name appears throughout the app and on the sign-in screen.</p></div><label className="field"><span>Company or site name</span><input value={siteName} onChange={(event) => setSiteName(event.target.value)} maxLength={80} placeholder="Your company name" /></label></section>
     <section className="mode-switch"><div><h2>Workspace mode</h2><p>Demo exercises the full workflow locally. Live calls your connected accounts.</p></div><div><button className={mode === "demo" ? "active" : ""} onClick={() => setMode("demo")}>Demo</button><button className={mode === "live" ? "active" : ""} onClick={() => setMode("live")}>Live</button></div></section>
     <section className="settings-grid">
       <article className="provider-settings"><header><span className="provider-icon etsy">E</span><div><h2>Etsy Open API v3</h2><p>Read-only listing access with OAuth 2.0 + PKCE</p></div><span className={`connection-state ${state.connections.etsy.status}`}><CheckCircle2 size={15} />{state.connections.etsy.status}</span></header><div className="credential-status"><LockKeyhole size={16} /><span>{state.connections.etsy.hasCredentials ? "Credentials saved and encrypted" : "Credentials not saved"}</span></div><label className="field"><span>API key keystring</span><input value={etsyKey} onChange={(event) => setEtsyKey(event.target.value)} placeholder={state.connections.etsy.hasCredentials ? "Saved — enter only to replace" : "Your existing Etsy keystring"} autoComplete="off" /></label><label className="field"><span>Shared secret</span><div className="secret-input"><input type={showSecrets ? "text" : "password"} value={etsySecret} onChange={(event) => setEtsySecret(event.target.value)} placeholder={state.connections.etsy.hasCredentials ? "Saved — enter only to replace" : "Your existing Etsy shared secret"} autoComplete="new-password" /><button onClick={() => setShowSecrets(!showSecrets)} aria-label="Toggle secret visibility">{showSecrets ? <EyeOff size={17} /> : <Eye size={17} />}</button></div></label><label className="field"><span>Shop ID</span><input value={etsyShopId} onChange={(event) => setEtsyShopId(event.target.value)} placeholder="Detected automatically after connection test" /></label><div className="callback"><span>OAuth callback URL</span><code>{publicBaseUrl.replace(/\/$/, "")}/api/oauth/etsy/callback</code></div><div className="provider-buttons"><a className={`button dark ${mode === "demo" || !state.connections.etsy.hasCredentials ? "disabled" : ""}`} href={mode === "live" && state.connections.etsy.hasCredentials ? "/api/oauth/etsy/start" : undefined}><PlugZap size={17} />Connect Etsy</a><button className="button outline" onClick={() => onTest("etsy")} disabled={busy === "test-etsy"}><KeyRound size={17} />{busy === "test-etsy" ? "Testing…" : "Test Etsy connection"}</button></div>
@@ -29,6 +31,6 @@ export function Settings({ state, onSave, onTest, busy }: { state: AppState; onS
       </article>
     </section>
     <section className="base-url"><label className="field"><span>Public app URL</span><input value={publicBaseUrl} onChange={(event) => setPublicBaseUrl(event.target.value)} placeholder="https://your-app.example.com" /></label><p>This exact URL must match the callback URLs registered in your existing Etsy and Square developer apps.</p><a href="https://developers.etsy.com/documentation/essentials/authentication/" target="_blank" rel="noreferrer">Etsy OAuth docs <ExternalLink size={13} /></a><a href="https://developer.squareup.com/docs/oauth-api/overview" target="_blank" rel="noreferrer">Square OAuth docs <ExternalLink size={13} /></a></section>
-    <footer className="settings-actions"><span><LockKeyhole size={16} />AES-256-GCM encrypted local credential store</span><button className="button lime" onClick={save} disabled={busy === "settings"}><Save size={18} />{busy === "settings" ? "Saving…" : "Save API settings"}</button></footer>
+    <footer className="settings-actions"><span><LockKeyhole size={16} />AES-256-GCM encrypted local credential store</span><button className="button lime" onClick={save} disabled={busy === "settings" || !siteName.trim()}><Save size={18} />{busy === "settings" ? "Saving…" : "Save settings"}</button></footer>
   </main>;
 }

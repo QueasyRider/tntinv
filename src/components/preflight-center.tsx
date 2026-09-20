@@ -57,7 +57,7 @@ export function PreflightCenter({ state, onOpen, onExport, busy }: {
   return <main className="section-page preflight-page">
     <header className="section-heading preflight-heading"><div><h1>PREFLIGHT &amp; FIX CENTER</h1><p>Catch catalog problems before they reach Square.</p></div><button className="button dark" disabled={!readyIds.length || Boolean(busy) || !squareReady} onClick={() => onExport(readyIds)}><Upload size={17} />{busy === "export" ? "Exporting…" : `Export ${readyIds.length} ready`}</button></header>
 
-    {!squareReady && <div className="preflight-global-alert" role="alert"><AlertTriangle size={20} /><div><strong>Square is not connected</strong><span>Connect and test Square in API Settings before exporting. Product checks are still available below.</span></div></div>}
+    {!squareReady && <div className="preflight-global-alert" role="alert"><AlertTriangle size={20} /><div><strong>Square is not connected</strong><span>Connect and test Square in Settings before exporting. Product checks are still available below.</span></div></div>}
 
     <section className="preflight-summary" aria-label="Preflight summary">
       <button className={filter === "blocked" ? "active blocked" : "blocked"} onClick={() => chooseFilter("blocked")}><ShieldAlert size={24} /><span><strong>{summary.blockingIssues}</strong><small>Blocking issues</small><em>{summary.blockedProducts} products</em></span></button>

@@ -1,6 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { ensureDatabase, getSql } from "./db";
+import { DEFAULT_SITE_NAME } from "./branding";
 import { decryptJson, encryptJson } from "./crypto";
 import { DEMO_PRODUCTS } from "./demo";
 import { buildImportFieldChanges } from "./import-review";
@@ -251,6 +252,7 @@ export async function getSettings(): Promise<AppSettings> {
   const rows = await getSql()`SELECT key, value FROM app_settings` as Array<{ key: string; value: string }>;
   const values = new Map(rows.map((row) => [row.key, row.value]));
   return {
+    siteName: values.get("site_name") || DEFAULT_SITE_NAME,
     mode: (values.get("mode") || "demo") as AppSettings["mode"],
     etsyShopId: values.get("etsy_shop_id") || "",
     squareEnvironment: (values.get("square_environment") || "sandbox") as AppSettings["squareEnvironment"],
@@ -262,7 +264,11 @@ export async function getSettings(): Promise<AppSettings> {
 export async function updateSettings(values: Partial<AppSettings>): Promise<void> {
   await ensureDatabase();
   const sql = getSql();
+  const siteName = values.siteName?.trim();
+  if (values.siteName !== undefined && !siteName) throw new Error("Company name is required.");
+  if (siteName && siteName.length > 80) throw new Error("Company name must be 80 characters or fewer.");
   const entries: Array<[string, string | undefined]> = [
+    ["site_name", siteName],
     ["mode", values.mode],
     ["etsy_shop_id", values.etsyShopId],
     ["square_environment", values.squareEnvironment],

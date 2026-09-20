@@ -1,7 +1,14 @@
+import type { Metadata } from "next";
 import { LockKeyhole, ShieldCheck } from "lucide-react";
+import { SiteBrandName } from "@/components/site-brand-name";
+import { getConfiguredSiteName } from "@/lib/branding-server";
 import { isAuthConfigured } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: `${await getConfiguredSiteName()} — Inventory Transfer` };
+}
 
 const errorMessages: Record<string, string> = {
   invalid: "That username or password is not correct.",
@@ -14,13 +21,13 @@ function safeNext(value?: string): string {
 }
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string; next?: string }> }) {
-  const params = await searchParams;
+  const [params, siteName] = await Promise.all([searchParams, getConfiguredSiteName()]);
   const configured = isAuthConfigured();
   const error = params.error ? errorMessages[params.error] : null;
 
   return <main className="login-page">
     <section className="login-card">
-      <div className="login-brand"><span>TWISTED <em>&amp;</em></span><span>THRIFTED</span><small>Inventory moves differently</small></div>
+      <div className="login-brand"><SiteBrandName siteName={siteName} /><small>Inventory moves differently</small></div>
       <div className="login-lock"><LockKeyhole size={28} /></div>
       <h1>SHOP ACCESS</h1>
       <p>Sign in to manage the Etsy-to-Square inventory workspace.</p>

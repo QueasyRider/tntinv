@@ -156,7 +156,12 @@ export function AppShell({ initialState }: { initialState: AppState }) {
     catch (error) { notifyError(error); }
   }
   async function saveSettings(payload: SettingsPayload) {
-    try { await call("/api/settings", "settings", { method: "POST", body: JSON.stringify(payload) }); setToast({ tone: "success", message: "API settings saved securely on the server." }); }
+    try {
+      const result = await call("/api/settings", "settings", { method: "POST", body: JSON.stringify(payload) });
+      const siteName = result.state?.settings.siteName || payload.settings.siteName;
+      document.title = `${siteName} — Inventory Transfer`;
+      setToast({ tone: "success", message: "Settings saved securely on the server." });
+    }
     catch (error) { notifyError(error); }
   }
   async function testConnection(provider: "etsy" | "square") {
@@ -168,7 +173,7 @@ export function AppShell({ initialState }: { initialState: AppState }) {
     setView(next); setActiveProductId(null); if (next !== "bulk") setBulkModal(false); window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  return <div className="app-shell"><Sidebar view={view} onChange={changeView} /><div className="app-column"><Topbar connections={state.connections} />
+  return <div className="app-shell"><Sidebar view={view} siteName={state.settings.siteName} onChange={changeView} /><div className="app-column"><Topbar connections={state.connections} siteName={state.settings.siteName} />
     {activeProduct ? <ProductEditor product={activeProduct} activities={state.activities} backLabel={view === "preflight" ? "Fix center" : view === "imports" ? "Import review" : "Inventory"} onBack={() => setActiveProductId(null)} onSave={saveProduct} onDelete={deleteActiveProduct} onExport={() => runExport([activeProduct.id])} busy={busy} />
       : view === "history" ? <History state={state} />
       : view === "settings" ? <Settings state={state} onSave={saveSettings} onTest={testConnection} busy={busy} />

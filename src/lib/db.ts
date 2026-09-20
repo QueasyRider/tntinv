@@ -1,5 +1,6 @@
 import "server-only";
 import { neon } from "@neondatabase/serverless";
+import { DEFAULT_SITE_NAME } from "./branding";
 
 let client: ReturnType<typeof neon> | null = null;
 let schemaPromise: Promise<void> | null = null;
@@ -120,6 +121,7 @@ async function initializeDatabase(): Promise<void> {
   await sql`INSERT INTO connections (provider, status, account_label, updated_at) VALUES ('etsy', 'demo', 'Demo Etsy shop', ${now}) ON CONFLICT (provider) DO NOTHING`;
   await sql`INSERT INTO connections (provider, status, account_label, updated_at) VALUES ('square', 'demo', 'Demo Square catalog', ${now}) ON CONFLICT (provider) DO NOTHING`;
   await sql`INSERT INTO app_settings (key, value) VALUES ('mode', 'demo') ON CONFLICT (key) DO NOTHING`;
+  await sql`INSERT INTO app_settings (key, value) VALUES ('site_name', ${DEFAULT_SITE_NAME}) ON CONFLICT (key) DO NOTHING`;
   await sql`INSERT INTO app_settings (key, value) VALUES ('etsy_shop_id', '') ON CONFLICT (key) DO NOTHING`;
   await sql`INSERT INTO app_settings (key, value) VALUES ('square_environment', 'sandbox') ON CONFLICT (key) DO NOTHING`;
   await sql`INSERT INTO app_settings (key, value) VALUES ('square_location_id', '') ON CONFLICT (key) DO NOTHING`;

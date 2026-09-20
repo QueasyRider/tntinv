@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Twisted & Thrifted — Inventory Transfer",
+  title: "Inventory Transfer",
   description: "A safe Etsy-to-Square inventory transfer workspace.",
 };
 
