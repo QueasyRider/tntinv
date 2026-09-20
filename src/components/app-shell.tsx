@@ -123,7 +123,11 @@ export function AppShell({ initialState }: { initialState: AppState }) {
   }
   async function saveProduct(working: ProductCopy, markReady: boolean) {
     if (!activeProductId) return;
-    try { await call(`/api/products/${activeProductId}`, "save", { method: "PATCH", body: JSON.stringify({ working, markReady }) }); setToast({ tone: "success", message: markReady ? "Product is validated and ready to export." : "Working copy saved. Etsy was not changed." }); }
+    try {
+      await call(`/api/products/${activeProductId}`, "save", { method: "PATCH", body: JSON.stringify({ working, markReady }) });
+      setToast({ tone: "success", message: markReady ? "Product is validated and ready to export." : "Working copy saved. Etsy was not changed." });
+      if (markReady) changeView("dashboard");
+    }
     catch (error) { notifyError(error); }
   }
   async function deleteActiveProduct() {
