@@ -1,21 +1,13 @@
 import "server-only";
 
-import { createHash, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { verifyAdminCredentials as verifyCredentials } from "@/lib/admin-credentials";
 import { isAuthConfigured, SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/session";
 
-function constantTimeEqual(value: string, expected: string): boolean {
-  const valueDigest = createHash("sha256").update(value).digest();
-  const expectedDigest = createHash("sha256").update(expected).digest();
-  return timingSafeEqual(valueDigest, expectedDigest);
-}
-
-export function verifyAdminCredentials(username: string, password: string): boolean {
-  const expectedUsername = process.env.ADMIN_USERNAME?.trim() || "";
-  const expectedPassword = process.env.ADMIN_PASSWORD || "";
+export async function verifyAdminCredentials(username: string, password: string): Promise<boolean> {
   if (!isAuthConfigured()) return false;
-  return constantTimeEqual(username.trim(), expectedUsername) && constantTimeEqual(password, expectedPassword);
+  return verifyCredentials(username, password);
 }
 
 export async function getAdminSession() {

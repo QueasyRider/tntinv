@@ -1,12 +1,14 @@
 {
-  "name": "twisted-thrifted",
-  "version": "0.1.0",
+  "name": "etsy-square-inventory-transfer",
+  "version": "1.1.0",
   "private": true,
+  "license": "UNLICENSED",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "setup:check": "node scripts/check-env.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

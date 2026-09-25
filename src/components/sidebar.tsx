@@ -1,9 +1,9 @@
 "use client";
 
-import { Boxes, ClipboardList, Clock3, LayoutDashboard, Settings2, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { Boxes, ClipboardList, Clock3, HeartPulse, LayoutDashboard, Settings2, ShieldCheck, SlidersHorizontal, WandSparkles } from "lucide-react";
 import { SiteBrandName } from "./site-brand-name";
 
-export type View = "dashboard" | "inventory" | "preflight" | "imports" | "bulk" | "history" | "settings";
+export type View = "dashboard" | "inventory" | "preflight" | "imports" | "bulk" | "history" | "setup" | "system" | "settings";
 const nav = [
   { id: "dashboard" as const, label: "Dashboard", icon: LayoutDashboard },
   { id: "inventory" as const, label: "Inventory", icon: Boxes },
@@ -11,6 +11,8 @@ const nav = [
   { id: "imports" as const, label: "Import review", icon: ClipboardList },
   { id: "bulk" as const, label: "Bulk edit", icon: SlidersHorizontal },
   { id: "history" as const, label: "Export history", icon: Clock3 },
+  { id: "setup" as const, label: "Setup guide", icon: WandSparkles },
+  { id: "system" as const, label: "System check", icon: HeartPulse },
   { id: "settings" as const, label: "Settings", icon: Settings2 },
 ];
 

@@ -21,7 +21,7 @@ export async function POST(request: Request) {
 
   const username = typeof form?.get("username") === "string" ? String(form.get("username")) : "";
   const password = typeof form?.get("password") === "string" ? String(form.get("password")) : "";
-  if (!verifyAdminCredentials(username, password)) {
+  if (!await verifyAdminCredentials(username, password)) {
     await delay(450);
     return loginRedirect(request, "invalid", next);
   }

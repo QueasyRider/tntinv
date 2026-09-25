@@ -6,6 +6,15 @@ import path from "node:path";
 const DATA_DIR = path.join(process.cwd(), ".data");
 const KEY_FILE = path.join(DATA_DIR, "master.key");
 
+export function encryptionKeyStatus(): { configured: boolean; valid: boolean; source: "environment" | "local" | "missing" } {
+  const configured = process.env.APP_ENCRYPTION_KEY;
+  if (configured) {
+    return { configured: true, valid: Buffer.from(configured, "base64").length === 32, source: "environment" };
+  }
+  if (process.env.NODE_ENV !== "production" && existsSync(KEY_FILE)) return { configured: true, valid: true, source: "local" };
+  return { configured: false, valid: false, source: "missing" };
+}
+
 function getKey(): Buffer {
   const configured = process.env.APP_ENCRYPTION_KEY;
   if (configured) {

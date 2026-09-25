@@ -1,10 +1,10 @@
 import { jwtVerify, SignJWT } from "jose";
 
-export const SESSION_COOKIE_NAME = "tt_admin_session";
+export const SESSION_COOKIE_NAME = "inventory_admin_session";
 export const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
 
-const SESSION_ISSUER = "twisted-thrifted-inventory";
-const SESSION_AUDIENCE = "twisted-thrifted-admin";
+const SESSION_ISSUER = "inventory-transfer";
+const SESSION_AUDIENCE = "inventory-admin";
 
 export interface AdminSession {
   username: string;
@@ -40,7 +40,6 @@ export async function createSessionToken(username: string): Promise<string> {
 
 export async function verifySessionToken(token?: string): Promise<AdminSession | null> {
   const key = sessionKey();
-  const username = configuredUsername();
   if (!token || !key || !isAuthConfigured()) return null;
 
   try {
@@ -49,8 +48,8 @@ export async function verifySessionToken(token?: string): Promise<AdminSession |
       issuer: SESSION_ISSUER,
       audience: SESSION_AUDIENCE,
     });
-    if (payload.sub !== username || payload.role !== "admin") return null;
-    return { username, role: "admin" };
+    if (typeof payload.sub !== "string" || !payload.sub || payload.role !== "admin") return null;
+    return { username: payload.sub, role: "admin" };
   } catch {
     return null;
   }

@@ -9,8 +9,11 @@ import { ImportChangeReview } from "./import-change-review";
 import { PreflightCenter } from "./preflight-center";
 import { ProductEditor } from "./product-editor";
 import { Settings, type SettingsPayload } from "./settings";
+import { SetupCenter } from "./setup-center";
 import { Sidebar, type View } from "./sidebar";
+import { SystemCheck } from "./system-check";
 import { Topbar } from "./topbar";
+import { APP_VERSION } from "@/lib/branding";
 import { buildPreflightReports } from "@/lib/preflight";
 import type { AppState, Product, ProductCopy } from "@/lib/types";
 
@@ -30,7 +33,7 @@ async function readApiResult(response: Response): Promise<ApiResult> {
 
 export function AppShell({ initialState }: { initialState: AppState }) {
   const [state, setState] = useState(initialState);
-  const [view, setView] = useState<View>("dashboard");
+  const [view, setView] = useState<View>(() => initialState.settings.setupComplete ? "dashboard" : "setup");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [activeProductId, setActiveProductId] = useState<string | null>(null);
   const [bulkModal, setBulkModal] = useState(false);
@@ -169,6 +172,34 @@ export function AppShell({ initialState }: { initialState: AppState }) {
     catch (error) { notifyError(error); }
   }
 
+  async function clearConnection(provider: "etsy" | "square") {
+    if (!window.confirm(`Remove the saved ${provider === "etsy" ? "Etsy" : "Square"} credentials and OAuth tokens from this installation?`)) return;
+    try {
+      await call(`/api/connections/${provider}`, `clear-${provider}`, { method: "DELETE" });
+      setToast({ tone: "success", message: `${provider === "etsy" ? "Etsy" : "Square"} credentials and tokens removed.` });
+    } catch (error) { notifyError(error); }
+  }
+
+  async function refreshSystemHealth() {
+    setBusy("system-health");
+    try {
+      const response = await fetch("/api/system-health", { cache: "no-store" });
+      const result = await response.json() as { ok: boolean; error?: string; health?: AppState["systemHealth"] };
+      if (!response.ok || !result.ok || !result.health) throw new Error(result.error || "System checks could not be completed.");
+      setState((current) => ({ ...current, systemHealth: result.health! }));
+      setToast({ tone: "success", message: "System checks refreshed." });
+    } catch (error) { notifyError(error); }
+    finally { setBusy(null); }
+  }
+
+  async function completeSetup() {
+    try {
+      await call("/api/setup/complete", "complete-setup", { method: "POST" });
+      setView("dashboard");
+      setToast({ tone: "success", message: "Setup completed. Test one product before transferring the full catalog." });
+    } catch (error) { notifyError(error); }
+  }
+
   function changeView(next: View) {
     setView(next); setActiveProductId(null); if (next !== "bulk") setBulkModal(false); window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -176,12 +207,14 @@ export function AppShell({ initialState }: { initialState: AppState }) {
   return <div className="app-shell"><Sidebar view={view} siteName={state.settings.siteName} onChange={changeView} /><div className="app-column"><Topbar connections={state.connections} siteName={state.settings.siteName} />
     {activeProduct ? <ProductEditor product={activeProduct} activities={state.activities} backLabel={view === "preflight" ? "Fix center" : view === "imports" ? "Import review" : "Inventory"} onBack={() => setActiveProductId(null)} onSave={saveProduct} onDelete={deleteActiveProduct} onExport={() => runExport([activeProduct.id])} busy={busy} />
       : view === "history" ? <History state={state} />
-      : view === "settings" ? <Settings state={state} onSave={saveSettings} onTest={testConnection} busy={busy} />
+      : view === "settings" ? <Settings state={state} onSave={saveSettings} onTest={testConnection} onClearConnection={clearConnection} busy={busy} />
+      : view === "setup" ? <SetupCenter state={state} onOpenSettings={() => changeView("settings")} onOpenSystem={() => changeView("system")} onFinish={completeSetup} busy={busy} />
+      : view === "system" ? <SystemCheck health={state.systemHealth} onRefresh={refreshSystemHealth} onOpenSettings={() => changeView("settings")} busy={busy} />
       : view === "preflight" ? <PreflightCenter state={state} onOpen={openProduct} onExport={runExport} busy={busy} />
       : view === "imports" ? <ImportChangeReview state={state} onOpen={openProduct} />
       : view === "bulk" ? <BulkEdit products={state.products} initialSelected={selected} onApply={applyBulk} busy={busy === "bulk"} />
       : <Dashboard state={state} selected={selected} setSelected={setSelected} onOpen={openProduct} onImport={runImport} onExport={runExport} onBulk={() => setBulkModal(true)} onHistory={() => changeView("history")} onPreflight={() => changeView("preflight")} busy={busy} inventoryOnly={view === "inventory"} />}
-    <footer className="legal-footer"><span className="footer-version">V1.0</span><span>‘Etsy’ is a trademark of Etsy, Inc. This Application uses Etsy&apos;s API, but is not endorsed or certified by Etsy.</span></footer>
+    <footer className="legal-footer"><span className="footer-version">V{APP_VERSION}</span><span>‘Etsy’ is a trademark of Etsy, Inc. This Application uses Etsy&apos;s API, but is not endorsed or certified by Etsy.</span></footer>
   </div>
   {bulkModal && <BulkEdit products={state.products} initialSelected={selected} onApply={applyBulk} onClose={() => setBulkModal(false)} modal busy={busy === "bulk"} />}
   {toast && <div className={`toast ${toast.tone}`} role="status">{toast.tone === "success" ? <CheckCircle2 size={19} /> : <AlertTriangle size={19} />}<span>{toast.message}</span><button onClick={() => setToast(null)} aria-label="Dismiss message"><X size={17} /></button></div>}

@@ -1,67 +1,69 @@
-# Twisted & Thrifted — Etsy to Square
+# Etsy to Square Inventory Transfer
 
-A private inventory transfer workspace for importing Etsy listings into an editable working copy, reviewing the Square-ready result, and exporting Catalog items, variations, images, and inventory counts to Square.
+A private, single-business workspace for importing Etsy listings, editing local working copies, reviewing changes, and exporting Square Catalog items, variations, images, taxes, categories, and inventory.
 
-Etsy data is read-only. Product edits are stored in the app's Neon Postgres database and are never written back to Etsy.
+> Each installation is designed for one business. Give every business its own deployment, database, encryption key, administrator login, and Etsy/Square connections.
 
-## What is included
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FQueasyRider%2Ftntinv&env=DATABASE_URL%2CAPP_ENCRYPTION_KEY%2CPUBLIC_APP_URL%2CADMIN_USERNAME%2CADMIN_PASSWORD%2CSESSION_SECRET&envDescription=Private%20settings%20required%20for%20one%20business%20installation&project-name=etsy-square-inventory)
 
-- Encrypted server-side storage for existing Etsy and Square app credentials and OAuth tokens
-- Etsy OAuth 2.0 authorization code flow with mandatory PKCE and the read-only `listings_r` and `shops_r` scopes
-- Square confidential-client OAuth flow with Catalog and Inventory scopes
-- Paginated Etsy listing import plus inventory, SKU, Shop Section, variation, and image hydration
-- HTML-entity normalization and line-break-preserving rich-text descriptions for Square
-- Immutable Etsy snapshots and separate editable working copies
-- Search, status filters, selection, product editing, variant editing, and bulk tools
-- Etsy-original versus Square-ready diff and validation preview
-- Idempotent Square catalog export with existing-category matching, image upload/attachment, and inventory physical counts
-- Persistent Etsy listing, Square item, Square variation, SKU, sync-run, and error mappings
-- Demo mode with bundled local product media for safe end-to-end testing
+The deploy button works when the installer can access the GitHub repository. Make the distribution repository a GitHub template or grant the customer access before using it.
 
-## Run locally
+## Included
 
-```bash
+- First-run Setup Guide and non-secret System Check screen
+- Custom company/site name
+- Private administrator login with in-app credential rotation
+- Encrypted server-side Etsy and Square credentials and OAuth tokens
+- Read-only Etsy imports; the app never writes changes back to Etsy
+- Etsy import change review, duplicate-SKU handling, Fix Center, and bulk editing
+- Square preview and export with variations, images, categories, taxes, and inventory
+- Versioned, automatically applied database migrations
+- Export history limited to the latest 50 entries
+- Provider disconnect and credential-rotation controls
+
+## Install
+
+Follow [INSTALL.md](INSTALL.md). The short version is:
+
+1. Create a separate repository, Vercel project, and Neon/Postgres database for the business.
+2. Add the six values listed in [.env.example](.env.example) to Vercel.
+3. Deploy, attach the final HTTPS domain, and set both OAuth callback URLs.
+4. Sign in and complete the in-app Setup Guide.
+5. Test one product before transferring the full catalog.
+
+The callback paths are:
+
+```text
+https://your-domain.example/api/oauth/etsy/callback
+https://your-domain.example/api/oauth/square/callback
+```
+
+## Local development
+
+```powershell
 npm install
+Copy-Item .env.example .env.local
+.\scripts\generate-secrets.ps1
+npm run setup:check
 npm run dev
 ```
 
-Create `.env.local` from `.env.example`, add a Neon `DATABASE_URL`, and then open `http://localhost:3000`. The app starts in Demo mode and creates its tables automatically.
+Copy the generated secrets into `.env.local`, add a development database URL and administrator credentials, then open `http://localhost:3000`.
 
-Production checks:
+## Operational documentation
 
-```bash
-npm run lint
-npm run build
-npm start
-```
+- [Installation and customer handoff](INSTALL.md)
+- [Upgrading safely](UPGRADING.md)
+- [Backups and recovery](BACKUP.md)
+- [Security model](SECURITY.md)
+- [Support responsibilities](docs/SUPPORT.md)
+- [Privacy notice template](docs/PRIVACY_TEMPLATE.md)
+- [Acceptable-use template](docs/ACCEPTABLE_USE_TEMPLATE.md)
+- [Release history](CHANGELOG.md)
+- [Distribution license status](LICENSE.md)
 
-## Connect the developer apps you already have
+## Important limits
 
-1. Open **API settings**.
-2. Switch the workspace to **Live**.
-3. Set the public app URL. It must exactly match the base URL used for the registered callbacks.
-4. Enter the existing Etsy keystring, Etsy shared secret, and Etsy shop ID. Save, then choose **Connect Etsy**.
-5. Enter the existing Square application ID, application secret, environment, and location ID. Save, then choose **Connect Square**.
-6. Use both connection-test buttons before importing or exporting.
+This is a single-tenant application with one administrator login. It is not currently designed for several unrelated businesses to share one database or deployment. A shared service would require organization accounts, tenant IDs on every record, strict tenant authorization, account recovery, auditing, and billing controls.
 
-Registered callback paths:
-
-- Etsy: `/api/oauth/etsy/callback`
-- Square: `/api/oauth/square/callback`
-
-The Etsy connection requests only the read scopes `listings_r` and `shops_r`; there is no Etsy write path in this project. Square requests `MERCHANT_PROFILE_READ`, `ITEMS_READ`, `ITEMS_WRITE`, `INVENTORY_READ`, and `INVENTORY_WRITE`.
-
-## Credential and deployment security
-
-Credentials and tokens are AES-256-GCM encrypted before entering Postgres. In local development, a 32-byte key is generated in the ignored `.data/master.key` file. For production, set `APP_ENCRYPTION_KEY` to a stable base64-encoded 32-byte key; do not commit it.
-
-This app is designed as a private shop-admin tool. Put it behind trusted access control before exposing the production domain to the public internet.
-
-## Current API implementation
-
-- Etsy Open API v3 listing and inventory endpoints
-- Square API version `2026-09-16`
-- Square `BatchUpsertCatalogObjects`, `CreateCatalogImage`, and `BatchChangeInventory`
-- Full-object Square updates, stored Square versions, idempotency keys, and persisted ID mappings
-
-Official references: [Etsy authentication](https://developers.etsy.com/documentation/essentials/authentication/), [Etsy API reference](https://developers.etsy.com/documentation/reference), [Square OAuth](https://developer.squareup.com/docs/oauth-api/overview), [Square Catalog](https://developer.squareup.com/docs/catalog-api/what-it-does), and [Square Inventory](https://developer.squareup.com/docs/inventory-api/how-it-works).
+`‘Etsy’ is a trademark of Etsy, Inc. This application uses Etsy's API, but is not endorsed or certified by Etsy.`

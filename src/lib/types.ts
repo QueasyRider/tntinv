@@ -71,6 +71,22 @@ export interface AppSettings {
   squareEnvironment: "sandbox" | "production";
   squareLocationId: string;
   publicBaseUrl: string;
+  setupComplete: boolean;
+}
+
+export interface SystemCheck {
+  id: string;
+  label: string;
+  status: "pass" | "warning" | "fail";
+  detail: string;
+  action?: string;
+}
+
+export interface SystemHealth {
+  checkedAt: string;
+  schemaVersion: number;
+  latestSchemaVersion: number;
+  checks: SystemCheck[];
 }
 
 export interface AppState {
@@ -79,6 +95,7 @@ export interface AppState {
   syncRuns: SyncRun[];
   connections: Record<Provider, ConnectionSummary>;
   settings: AppSettings;
+  systemHealth: SystemHealth;
   metrics: { imported: number; ready: number; exported: number; errors: number };
 }
 

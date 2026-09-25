@@ -1,4 +1,5 @@
-export const DEFAULT_SITE_NAME = "Twisted & Thrifted";
+export const DEFAULT_SITE_NAME = "Your Business";
+export const APP_VERSION = "1.1.0";
 
 export function siteInitials(siteName: string): string {
   const name = siteName.trim() || DEFAULT_SITE_NAME;
@@ -9,5 +10,5 @@ export function siteInitials(siteName: string): string {
     return `${left[0] || ""}&${right[0] || ""}`.toUpperCase();
   }
   const words = name.match(/[\p{L}\p{N}]+/gu) || [];
-  return words.slice(0, 2).map((word) => word[0]).join("").toUpperCase() || "WS";
+  return words.slice(0, 2).map((word) => word[0]).join("").toUpperCase() || "IB";
 }

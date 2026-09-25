@@ -8,6 +8,7 @@ import { buildImportFieldChanges } from "./import-review";
 import { mergeImportedProductCopy, productCopiesMatch, rebaseImportedProductCopy } from "./import-merge";
 import { duplicateSkuError, hasUnavailableSku, isUnavailableSku, normalizeSkuKey, UNAVAILABLE_SKU_ERROR, UNAVAILABLE_SKU_KEY } from "./sku";
 import { normalizeProductText } from "./text-format";
+import { getSystemHealth } from "./system-health";
 import type { Activity, AppSettings, AppState, ConnectionSummary, ImportChangeReview, ImportChangeType, ImportReviewData, ImportReviewRun, Product, ProductCopy, ProductStatus, Provider, SyncRun, ValidationIssue } from "./types";
 
 interface ProductRow {
@@ -257,7 +258,8 @@ export async function getSettings(): Promise<AppSettings> {
     etsyShopId: values.get("etsy_shop_id") || "",
     squareEnvironment: (values.get("square_environment") || "sandbox") as AppSettings["squareEnvironment"],
     squareLocationId: values.get("square_location_id") || "",
-    publicBaseUrl: values.get("public_base_url") || process.env.PUBLIC_APP_URL || "https://inventory.twistedandthrifted.com",
+    publicBaseUrl: values.get("public_base_url") || process.env.PUBLIC_APP_URL || "http://localhost:3000",
+    setupComplete: values.get("setup_complete") === "true",
   };
 }
 
@@ -267,6 +269,13 @@ export async function updateSettings(values: Partial<AppSettings>): Promise<void
   const siteName = values.siteName?.trim();
   if (values.siteName !== undefined && !siteName) throw new Error("Company name is required.");
   if (siteName && siteName.length > 80) throw new Error("Company name must be 80 characters or fewer.");
+  if (values.publicBaseUrl !== undefined) {
+    let url: URL;
+    try { url = new URL(values.publicBaseUrl); }
+    catch { throw new Error("Public app URL must be a complete URL."); }
+    const local = process.env.NODE_ENV !== "production" && ["localhost", "127.0.0.1"].includes(url.hostname);
+    if (url.protocol !== "https:" && !local) throw new Error("Public app URL must use HTTPS.");
+  }
   const entries: Array<[string, string | undefined]> = [
     ["site_name", siteName],
     ["mode", values.mode],
@@ -274,6 +283,7 @@ export async function updateSettings(values: Partial<AppSettings>): Promise<void
     ["square_environment", values.squareEnvironment],
     ["square_location_id", values.squareLocationId],
     ["public_base_url", values.publicBaseUrl],
+    ["setup_complete", values.setupComplete === undefined ? undefined : String(values.setupComplete)],
   ];
   for (const [key, value] of entries) {
     if (value !== undefined) await sql`INSERT INTO app_settings (key, value) VALUES (${key}, ${value}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`;
@@ -552,12 +562,13 @@ export async function getAppState(): Promise<AppState> {
   if (settings.mode === "demo" && !Number(countRows[0]?.count || 0)) await seedDemoProducts();
   const activityPromise = (async () => await getSql()`SELECT id, kind, title, detail, product_id, created_at FROM activities ORDER BY created_at DESC LIMIT 40` as ActivityRow[])();
   const syncPromise = (async () => await getSql()`SELECT id, direction, status, selected_count, success_count, error_count, error_json, started_at, finished_at FROM sync_runs ORDER BY started_at DESC LIMIT ${MAX_SYNC_RUN_HISTORY}` as SyncRunRow[])();
-  const [products, activityRows, syncRows, etsy, square] = await Promise.all([
+  const [products, activityRows, syncRows, etsy, square, systemHealth] = await Promise.all([
     getProducts(),
     activityPromise,
     syncPromise,
     getConnection("etsy"),
     getConnection("square"),
+    getSystemHealth(),
   ]);
   const activities = activityRows.map((row): Activity => ({ id: row.id, kind: row.kind, title: row.title, detail: row.detail, productId: row.product_id, createdAt: row.created_at }));
   const syncRuns = syncRows.map(mapSyncRun);
@@ -567,6 +578,7 @@ export async function getAppState(): Promise<AppState> {
     syncRuns,
     connections: { etsy: etsy.summary, square: square.summary },
     settings,
+    systemHealth,
     metrics: {
       imported: products.length,
       ready: products.filter((product) => product.status === "ready").length,
@@ -574,6 +586,17 @@ export async function getAppState(): Promise<AppState> {
       errors: products.filter((product) => product.status === "error").length,
     },
   };
+}
+
+export async function clearConnection(provider: Provider): Promise<void> {
+  await ensureDatabase();
+  await getSql()`
+    UPDATE connections
+    SET status = 'demo', account_label = ${provider === "etsy" ? "Etsy not configured" : "Square not configured"},
+        config_enc = NULL, token_enc = NULL, last_tested_at = NULL, error = NULL, updated_at = ${new Date().toISOString()}
+    WHERE provider = ${provider}
+  `;
+  await addActivity("connection", `${provider === "etsy" ? "Etsy" : "Square"} connection cleared`, "Saved credentials and OAuth tokens were removed.");
 }
 
 async function pruneSyncRunHistory(): Promise<void> {
